@@ -28,7 +28,14 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { t } from "@/i18n";
 import { api } from "@/lib/api";
-import type { LLMPoolMember, LLMPoolStatus, LLMProfile, LLMRetryOverride } from "@/lib/types";
+import type {
+  LLMPoolMember,
+  LLMPoolStatus,
+  LLMProfile,
+  LLMQueueStat,
+  LLMRetryOverride,
+  OllamaModelInfo,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import { ProfileRetryFields, RetryPolicyPanel, ZERO_OVERRIDE } from "./_components/retry";
@@ -361,6 +368,7 @@ function ProfileSheet({
   const [testing, setTesting] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [models, setModels] = React.useState<string[]>([]);
+  const [modelInfo, setModelInfo] = React.useState<Record<string, OllamaModelInfo>>({}); // Ollama only: tools / size per model
   const [loadingModels, setLoadingModels] = React.useState(false);
   const [modelsOpen, setModelsOpen] = React.useState(false);
   const [modelQuery, setModelQuery] = React.useState(""); // filter text for the loaded model list; reset on open/close
@@ -397,6 +405,7 @@ function ProfileSheet({
     setApiKey("");
     setKeyHint(profile?.api_key_hint ?? "");
     setModels([]);
+    setModelInfo({});
     setModelsOpen(false);
     setModelQuery("");
   }, [open, profile]);
@@ -415,11 +424,13 @@ function ProfileSheet({
     if (loadingModels) return;
     setLoadingModels(true);
     setModels([]);
+    setModelInfo({});
     setModelQuery("");
     try {
       const r = await api.fetchLLMModels(format, baseUrl, apiKey, proxy, profileId);
       if (r.ok && r.models && r.models.length > 0) {
         setModels(r.models);
+        setModelInfo(r.details ?? {});
         setModelsOpen(true);
         toast.success(t("Loaded {count} models", { count: r.models.length }));
       } else {
@@ -641,7 +652,10 @@ function ProfileSheet({
                               setModelsOpen(false);
                             }}
                           >
-                            {m}
+                            <span className="flex items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate">{m}</span>
+                              <ModelFacts info={modelInfo[m]} />
+                            </span>
                           </button>
                         ))
                       )}
@@ -650,6 +664,13 @@ function ProfileSheet({
                 )}
               </Popover>
             </div>
+            {format === "ollama" && modelInfo[model.trim()]?.tools === false && (
+              <p className="text-destructive text-xs">
+                {t(
+                  "This model does not support tool calls. ARTEX agents work only through tools, so tasks on this profile will not make progress. Pick a model marked with tool support.",
+                )}
+              </p>
+            )}
           </div>
 
           <div className="grid gap-2">
@@ -771,6 +792,13 @@ function ProfileSheet({
               "Rate limits of 0 mean unlimited, shared across all agents. The context window is in K (thousand tokens); 0 = the 200K default, capped at 1000 (i.e. 1M). Setting it too high keeps compression from ever triggering.",
             )}
           </p>
+          {format === "ollama" && (
+            <p className="-mt-2 text-muted-foreground text-xs">
+              {t(
+                "For Ollama, a context window you set here is also applied on the server: ARTEX creates a variant of the model with that context size (at least 32K) and uses it. Without it, Ollama runs at its default (4K on GPUs under 24 GB) and silently drops older messages. A larger context uses more VRAM.",
+              )}
+            </p>
+          )}
 
           <div className="grid gap-2 sm:grid-cols-3">
             <div className="grid gap-2">
@@ -950,6 +978,45 @@ function ProfileSheet({
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Size and tool support next to an Ollama model in the picker. Only shown when the server reported them.
+function ModelFacts({ info }: { info?: OllamaModelInfo }) {
+  if (!info) return null;
+  const gb = info.size_bytes ? (info.size_bytes / 1e9).toFixed(1) : "";
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 font-sans text-[10px] text-muted-foreground">
+      {info.parameter_size && <span>{info.parameter_size}</span>}
+      {gb && <span>{t("{size} GB", { size: gb })}</span>}
+      {info.tools === false && (
+        <span
+          className="rounded bg-destructive/10 px-1 text-destructive"
+          title={t("This model cannot call tools, so ARTEX agents cannot use it")}
+        >
+          {t("no tools")}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// "2 running · 5 waiting" on a profile card while requests are in flight. Waiting requests mean the profile's
+// max-concurrent cap is the bottleneck (for a local GPU, usually the GPU itself). Hidden when idle.
+function QueueBadge({ stat }: { stat?: LLMQueueStat }) {
+  if (!stat || (stat.in_flight === 0 && stat.queued === 0)) return null;
+  return (
+    <span
+      className={cn(
+        "font-medium",
+        stat.queued > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400",
+      )}
+      title={t("Requests running on this profile now, and requests waiting for a free slot")}
+    >
+      {stat.queued > 0
+        ? t("{running} running · {queued} waiting", { running: stat.in_flight, queued: stat.queued })
+        : t("{running} running", { running: stat.in_flight })}
+    </span>
+  );
+}
+
 export default function LLMPage() {
   const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
   const [pool, setPool] = React.useState<LLMPoolStatus | null>(null);
@@ -983,6 +1050,20 @@ export default function LLMPage() {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  // Live running / queued request counts per profile, polled while the page is visible so a busy local GPU shows up at once.
+  const [queue, setQueue] = React.useState<Record<string, LLMQueueStat>>({});
+  React.useEffect(() => {
+    const poll = async () => {
+      try {
+        setQueue((await api.llmQueue()).profiles ?? {});
+      } catch {
+        /* ignore */
+      }
+    };
+    void poll();
+    return setVisibleInterval(poll, 3_000);
+  }, []);
 
   // The health badge on each card reads pool state by profile id.
   const health = React.useMemo(() => {
@@ -1101,6 +1182,7 @@ export default function LLMPage() {
                       {(p.max_concurrent ?? 0) > 0 && (
                         <span>{t("Max {count} at once", { count: p.max_concurrent ?? 0 })}</span>
                       )}
+                      <QueueBadge stat={queue[p.id]} />
                       {p.proxy && <span className="truncate">{t("Proxy {proxy}", { proxy: p.proxy })}</span>}
                       {p.reasoning_effort && (
                         <span>

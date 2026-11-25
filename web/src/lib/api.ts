@@ -59,6 +59,8 @@ import type {
   JudgeConfig,
   JudgeUsage,
   LLMPoolStatus,
+  LLMQueueStatus,
+  OllamaModelInfo,
   LLMProfile,
   LLMRecordDetail,
   LLMRecordItem,
@@ -1191,13 +1193,14 @@ export const api = {
   activateLLMProfile: (id: string) => post<{ ok: boolean }>("/llm/profiles/active", { id: Number(id) }),
   // The pool chain's actual order + each profile's breaker state.
   llmPool: () => get<LLMPoolStatus>("/llm/pool"),
+  llmQueue: () => get<LLMQueueStatus>("/llm/queue"),
   // Clear the breaker so the next call retries this profile immediately; no id = clear all.
   resetLLMPool: (id?: string) => post<LLMPoolStatus>("/llm/pool/reset", { id: id ? Number(id) : 0 }),
   // Global retry policy (count + interval for each of the five layers). All zeros = built-in defaults everywhere.
   llmRetryPolicy: () => get<LLMRetryPolicy>("/llm/retry-policy"),
   saveLLMRetryPolicy: (p: LLMRetryPolicy) => post<LLMRetryPolicy>("/llm/retry-policy", p),
   fetchLLMModels: (provider: string, base_url: string, api_key: string, proxy = "", profile_id?: number) =>
-    post<{ ok: boolean; error?: string; models?: string[] }>("/llm/models", {
+    post<{ ok: boolean; error?: string; models?: string[]; details?: Record<string, OllamaModelInfo> }>("/llm/models", {
       provider,
       base_url,
       api_key,

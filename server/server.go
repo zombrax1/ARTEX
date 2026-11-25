@@ -751,6 +751,35 @@ func (s *Server) profileGate(id int64) *llmgate.Gate {
 	return g
 }
 
+// LLMQueueStat is one profile's live concurrency picture: requests holding a
+// slot, requests waiting for one, and the cap (0 = unlimited).
+type LLMQueueStat struct {
+	InFlight int `json:"in_flight"`
+	Queued   int `json:"queued"`
+	Limit    int `json:"limit"`
+}
+
+// llmQueueStats reads every profile gate without creating any. A profile that
+// has not sent a request since the server started has no gate and is absent.
+func (s *Server) llmQueueStats() map[string]LLMQueueStat {
+	s.provCacheMu.Lock()
+	gates := make(map[int64]*llmgate.Gate, len(s.llmGates))
+	for id, g := range s.llmGates {
+		gates[id] = g
+	}
+	s.provCacheMu.Unlock()
+	out := make(map[string]LLMQueueStat, len(gates))
+	for id, g := range gates {
+		inFlight, queued := g.Stats()
+		limit := g.Limit()
+		if limit < 0 {
+			limit = 0
+		}
+		out[i64s(id)] = LLMQueueStat{InFlight: inFlight, Queued: queued, Limit: limit}
+	}
+	return out
+}
+
 // setGateLimit applies a profile's saved cap (<=0 = unlimited) to its gate.
 func setGateLimit(id int64, g *llmgate.Gate, limit int) {
 	if limit < 0 {
@@ -1082,6 +1111,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/llm/retry-policy", s.pgGetLLMRetryPolicy)
 	mux.HandleFunc("POST /api/llm/retry-policy", s.pgSaveLLMRetryPolicy)
 	mux.HandleFunc("GET /api/llm/pool", s.pgLLMPoolStatus)
+	mux.HandleFunc("GET /api/llm/queue", s.llmQueue) // live per-profile in-flight / queued request counts
 	mux.HandleFunc("POST /api/llm/pool/reset", s.pgLLMPoolReset)
 	mux.HandleFunc("POST /api/llm/models", s.pgListModels)
 

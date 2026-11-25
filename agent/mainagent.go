@@ -108,7 +108,7 @@ Do not fabricate findings; answer only from real data returned by tools.`
 
 func mainAgentSystem(goal, dataDir, workDir string) string {
 	body := renderSystem("mainagent", mainAgentDefaultTmpl, MainVars{Goal: goal, DataDir: dataDir, Now: nowStr()})
-	return body + untrustedContentTail(body) + artifactSpec(workDir) + noiseProfileBlock()
+	return body + untrustedContentTail(body) + artifactSpec(workDir) + noiseProfileBlock() + toolInventoryBlock()
 }
 
 // Chat handles one human message and returns the assistant reply. emit, if
@@ -177,7 +177,7 @@ func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.
 	if hooks != nil { // typed-nil guard: only set when concrete (avoids harness panic)
 		opts.Hooks = hooks
 	}
-	opts.Hooks = SpillHooks(opts.Hooks, opts.ToolOutputDir)
+	opts.Hooks = SpillHooks(MissingToolHooks(opts.Hooks), opts.ToolOutputDir)
 	// Segment 0 keeps the legacy "exp%d-main" name so existing transcripts still
 	// load; each new session (seg>=1) gets its own file for a clean context. The id
 	// is the provider-side identity (session header, usage metering) with or without
