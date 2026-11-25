@@ -30,6 +30,7 @@ import (
 	"github.com/Autumn-27/artex/db"
 	"github.com/Autumn-27/artex/egress"
 	"github.com/Autumn-27/artex/intercept"
+	"github.com/Autumn-27/artex/llmgate"
 	"github.com/Autumn-27/artex/llmpool"
 	"github.com/Autumn-27/artex/llmrec"
 	"github.com/Autumn-27/artex/report"
@@ -145,6 +146,11 @@ type Server struct {
 	provCacheMu   sync.Mutex
 	provByProfile map[int64]*provEntry
 	provCacheGen  uint64
+	// llmGates holds one concurrency gate per profile id (profile max_concurrent).
+	// Unlike provByProfile it survives cache invalidation, so in-flight requests
+	// on a provider built before a profile edit still count against the same cap
+	// as requests on the rebuilt one. Guarded by provCacheMu.
+	llmGates map[int64]*llmgate.Gate
 
 	// llmHealth is the process-wide circuit-breaker state for LLM failover (failover pool).
 	// It deliberately lives OUTSIDE the provider caches: rebuilding the chain
@@ -201,6 +207,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		triggerActive: map[string]int{}, triggerCfg: map[string]triggerBehavior{},
 		profChatAgents: map[int64]*agent.ChatAgent{},
 		provByProfile:  map[int64]*provEntry{},
+		llmGates:       map[int64]*llmgate.Gate{},
 		taskAgents:     map[string]*taskAgentBundle{}, archiveWake: make(chan struct{}, 1),
 		loginLimit: newLoginLimiter(time.Now), pwdLimit: newLoginLimiter(time.Now)}
 	s.llmHealth, s.llmHealthSync = newLLMHealthRegistry(ctx, m.pg)
@@ -461,6 +468,7 @@ func (s *Server) saveLLMConfig(cfg agent.Config) error {
 	var maxTokensField string
 	var sessionHeaderKey string
 	var userAgent string
+	var maxConcurrent int
 	var retry db.RetryOverride
 	clearCustomHeaders := format != "bedrock-gateway"
 	if profs, _ := s.m.pg.ListProfiles(); profs != nil {
@@ -475,6 +483,7 @@ func (s *Server) saveLLMConfig(cfg agent.Config) error {
 				maxTokens, maxTokensField = p.MaxTokens, p.MaxTokensField
 				sessionHeaderKey = p.SessionHeaderKey
 				userAgent = p.UserAgent
+				maxConcurrent = p.MaxConcurrent
 				retry = p.Retry
 				break
 			}
@@ -486,7 +495,7 @@ func (s *Server) saveLLMConfig(cfg agent.Config) error {
 		ContextWindowK: cfg.ContextWindowK, ThinkingType: cfg.ThinkingType, ReasoningEffort: cfg.ReasoningEffort, IsDefault: true,
 		Priority: priority, PoolExclude: poolExclude, Streaming: streaming,
 		MaxTokens: maxTokens, MaxTokensField: maxTokensField, SessionHeaderKey: sessionHeaderKey, UserAgent: userAgent,
-		Retry: retry, CustomHeaders: cfg.CustomHeaders, ClearCustomHeaders: clearCustomHeaders,
+		Retry: retry, CustomHeaders: cfg.CustomHeaders, ClearCustomHeaders: clearCustomHeaders, MaxConcurrent: maxConcurrent,
 	})
 	if err != nil {
 		return err
@@ -692,9 +701,12 @@ func (s *Server) providerForProfile(id int64) (llm.Provider, agent.Config, bool)
 		log.Printf("[engine] build provider for LLM profile %d failed: %v", id, err)
 		return nil, agent.Config{}, false
 	}
-	// Wrap with recorder, tagged with this profile's name.
+	// Wrap with recorder, tagged with this profile's name, then with the profile's
+	// concurrency gate. The gate sits outside the recorder so recorded latency is
+	// the model's own time, not time spent queued behind other requests.
 	if p, _ := s.m.pg.ProfileByID(id); p != nil {
 		prov = llmrec.Wrap(prov, s.m.PG(), cfg.Model, p.Name, cfg.ThinkingType, cfg.ReasoningEffort, s.m.LLMRecordEnabled)
+		prov = llmgate.Wrap(prov, s.profileGate(id, p.MaxConcurrent))
 		prov = bindSideProvider(prov, cfg, id, p.Name)
 	}
 	s.provCacheMu.Lock()
@@ -710,6 +722,34 @@ func (s *Server) providerForProfile(id int64) (llm.Provider, agent.Config, bool)
 	}
 	s.provCacheMu.Unlock()
 	return prov, cfg, true
+}
+
+// profileGate returns the shared concurrency gate for a profile, updated to
+// limit (<=0 = unlimited). It returns nil while the profile has never had a
+// limit, so an unlimited profile pays nothing. Once a gate exists it is kept
+// (with its limit updated, possibly to unlimited) so requests still in flight on
+// an older provider keep counting against the cap.
+func (s *Server) profileGate(id int64, limit int) *llmgate.Gate {
+	s.provCacheMu.Lock()
+	defer s.provCacheMu.Unlock()
+	g := s.llmGates[id]
+	if g == nil {
+		if limit <= 0 {
+			return nil
+		}
+		if s.llmGates == nil {
+			s.llmGates = map[int64]*llmgate.Gate{}
+		}
+		g = llmgate.New(limit)
+		s.llmGates[id] = g
+		log.Printf("[engine] LLM profile %d: at most %d concurrent requests", id, limit)
+		return g
+	}
+	if g.Limit() != limit {
+		log.Printf("[engine] LLM profile %d: concurrent request cap %d → %d (0 = unlimited)", id, g.Limit(), limit)
+		g.SetLimit(limit)
+	}
+	return g
 }
 
 // chatAgentForProfile returns a ChatAgent built from a specific LLM profile, cached

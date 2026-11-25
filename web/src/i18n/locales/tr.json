@@ -2724,5 +2724,8 @@
   "Search company…": "Şirket ara…",
   "Failed to load companies": "Şirketler yüklenemedi",
   "No company found": "Şirket bulunamadı",
-  "Manage companies": "Şirketleri yönet"
+  "Manage companies": "Şirketleri yönet",
+  "Max concurrent requests": "Maksimum eşzamanlı istek",
+  "How many requests may run on this profile at the same time, across all tasks and agents. Extra requests wait in a queue. 0 = unlimited. For a local GPU (e.g. Ollama), 1 or 2 keeps it from being overloaded.": "Bu profilde tüm görevler ve ajanlar genelinde aynı anda kaç isteğin çalışabileceği. Fazla istekler kuyrukta bekler. 0 = sınırsız. Yerel bir GPU için (ör. Ollama) 1 veya 2, aşırı yüklenmeyi önler.",
+  "Max {count} at once": "Aynı anda en fazla {count}"
 }

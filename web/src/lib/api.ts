@@ -1172,6 +1172,7 @@ export const api = {
     api_key?: string; // blank on update keeps the existing key
     rate_per_second?: number;
     rate_per_minute?: number;
+    max_concurrent?: number; // max in-flight requests on this profile; 0 = unlimited
     context_window_k?: number;
     thinking_type?: string; // ""(not sent)|"disabled"|"enabled"
     reasoning_effort?: string; // ""(not sent)|"low"|"medium"|"high"|"xhigh"|"max"
