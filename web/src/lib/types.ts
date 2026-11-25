@@ -1247,6 +1247,18 @@ export interface LLMPoolMember {
   last_at?: string;
 }
 
+// Live per-profile request counts under the profile's max-concurrent cap (GET /api/llm/queue).
+// A profile that has sent no request since the server started is absent.
+export interface LLMQueueStat {
+  in_flight: number;
+  queued: number;
+  limit: number; // 0 = unlimited
+}
+
+export interface LLMQueueStatus {
+  profiles: Record<string, LLMQueueStat>;
+}
+
 export interface LLMPoolStatus {
   enabled: boolean;
   bind_fallback: boolean;

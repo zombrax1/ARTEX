@@ -59,6 +59,7 @@ import type {
   JudgeConfig,
   JudgeUsage,
   LLMPoolStatus,
+  LLMQueueStatus,
   LLMProfile,
   LLMRecordDetail,
   LLMRecordItem,
@@ -1191,6 +1192,7 @@ export const api = {
   activateLLMProfile: (id: string) => post<{ ok: boolean }>("/llm/profiles/active", { id: Number(id) }),
   // The pool chain's actual order + each profile's breaker state.
   llmPool: () => get<LLMPoolStatus>("/llm/pool"),
+  llmQueue: () => get<LLMQueueStatus>("/llm/queue"),
   // Clear the breaker so the next call retries this profile immediately; no id = clear all.
   resetLLMPool: (id?: string) => post<LLMPoolStatus>("/llm/pool/reset", { id: id ? Number(id) : 0 }),
   // Global retry policy (count + interval for each of the five layers). All zeros = built-in defaults everywhere.

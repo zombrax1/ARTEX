@@ -28,7 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { t } from "@/i18n";
 import { api } from "@/lib/api";
-import type { LLMPoolMember, LLMPoolStatus, LLMProfile, LLMRetryOverride } from "@/lib/types";
+import type { LLMPoolMember, LLMPoolStatus, LLMProfile, LLMQueueStat, LLMRetryOverride } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import { ProfileRetryFields, RetryPolicyPanel, ZERO_OVERRIDE } from "./_components/retry";
@@ -957,6 +957,25 @@ function ProfileSheet({
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// "2 running · 5 waiting" on a profile card while requests are in flight. Waiting requests mean the profile's
+// max-concurrent cap is the bottleneck (for a local GPU, usually the GPU itself). Hidden when idle.
+function QueueBadge({ stat }: { stat?: LLMQueueStat }) {
+  if (!stat || (stat.in_flight === 0 && stat.queued === 0)) return null;
+  return (
+    <span
+      className={cn(
+        "font-medium",
+        stat.queued > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400",
+      )}
+      title={t("Requests running on this profile now, and requests waiting for a free slot")}
+    >
+      {stat.queued > 0
+        ? t("{running} running · {queued} waiting", { running: stat.in_flight, queued: stat.queued })
+        : t("{running} running", { running: stat.in_flight })}
+    </span>
+  );
+}
+
 export default function LLMPage() {
   const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
   const [pool, setPool] = React.useState<LLMPoolStatus | null>(null);
@@ -990,6 +1009,20 @@ export default function LLMPage() {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  // Live running / queued request counts per profile, polled while the page is visible so a busy local GPU shows up at once.
+  const [queue, setQueue] = React.useState<Record<string, LLMQueueStat>>({});
+  React.useEffect(() => {
+    const poll = async () => {
+      try {
+        setQueue((await api.llmQueue()).profiles ?? {});
+      } catch {
+        /* ignore */
+      }
+    };
+    void poll();
+    return setVisibleInterval(poll, 3_000);
+  }, []);
 
   // The health badge on each card reads pool state by profile id.
   const health = React.useMemo(() => {
@@ -1108,6 +1141,7 @@ export default function LLMPage() {
                       {(p.max_concurrent ?? 0) > 0 && (
                         <span>{t("Max {count} at once", { count: p.max_concurrent ?? 0 })}</span>
                       )}
+                      <QueueBadge stat={queue[p.id]} />
                       {p.proxy && <span className="truncate">{t("Proxy {proxy}", { proxy: p.proxy })}</span>}
                       {p.reasoning_effort && (
                         <span>

@@ -2338,6 +2338,13 @@ func (s *Server) pgLLMPoolStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.llmPoolStatus())
 }
 
+// llmQueue reports, per profile id, how many LLM requests are running and how
+// many wait for a slot under the profile's max-concurrent cap. It reads only
+// in-memory counters, so the LLM page can poll it cheaply.
+func (s *Server) llmQueue(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{"profiles": s.llmQueueStats()})
+}
+
 // pgLLMPoolReset clears a tripped profile's circuit breaker so the next call
 // tries it again immediately ("recover now"). id=0 clears every profile.
 func (s *Server) pgLLMPoolReset(w http.ResponseWriter, r *http.Request) {

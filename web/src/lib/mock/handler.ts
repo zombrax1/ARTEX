@@ -2305,6 +2305,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/llm/profiles" && m === "POST") return { id: Number(b.id) || 3 };
   if (path === "/llm/profiles/active") return { ok: true };
   if (path === "/llm/pool" && m === "GET") return D.llmPool;
+  if (path === "/llm/queue" && m === "GET") return { profiles: {} };
   if (path === "/llm/pool/reset")
     return { ...D.llmPool, chain: D.llmPool.chain.map((c) => ({ ...c, state: "ok", fails: 0, cooldown_secs: 0 })) };
   if (seg[0] === "llm" && seg[1] === "profiles" && seg.length === 3 && m === "DELETE")
