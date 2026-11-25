@@ -2727,5 +2727,6 @@
   "Manage companies": "Şirketleri yönet",
   "Max concurrent requests": "Maksimum eşzamanlı istek",
   "How many requests may run on this profile at the same time, across all tasks and agents. Extra requests wait in a queue. 0 = unlimited. For a local GPU (e.g. Ollama), 1 or 2 keeps it from being overloaded.": "Bu profilde tüm görevler ve ajanlar genelinde aynı anda kaç isteğin çalışabileceği. Fazla istekler kuyrukta bekler. 0 = sınırsız. Yerel bir GPU için (ör. Ollama) 1 veya 2, aşırı yüklenmeyi önler.",
-  "Max {count} at once": "Aynı anda en fazla {count}"
+  "Max {count} at once": "Aynı anda en fazla {count}",
+  "For Ollama, a context window you set here is also applied on the server: ARTEX creates a variant of the model with that context size (at least 32K) and uses it. Without it, Ollama runs at its default (4K on GPUs under 24 GB) and silently drops older messages. A larger context uses more VRAM.": "Ollama için burada ayarladığınız bağlam penceresi sunucuda da uygulanır: ARTEX modelin bu bağlam boyutuna (en az 32K) sahip bir varyantını oluşturur ve onu kullanır. Ayarlanmazsa Ollama varsayılanla (24 GB altındaki GPU'larda 4K) çalışır ve eski mesajları sessizce atar. Daha büyük bir bağlam daha fazla VRAM kullanır."
 }

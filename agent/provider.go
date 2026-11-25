@@ -48,6 +48,8 @@ type Config struct {
 	// ContextWindowK is the model's context window in K tokens (user-configured).
 	// CompactionWindow applies a 32K floor for compaction math; ContextWindowTokens
 	// does not, so routing and side-question budgets see the real window. 0 = default.
+	// For an Ollama profile a non-zero value is also applied on the server as the
+	// model's num_ctx (see ollama_ctx.go); other formats never send it.
 	ContextWindowK int
 	// ThinkingType independently controls the thinking "on/off" field (thinking.type):
 	//   "" = don't send (default, compatible with models that don't support the field);
@@ -398,6 +400,16 @@ func (c Config) NewProvider() (llm.Provider, error) {
 		}
 		if strings.TrimSpace(apiKey) == "" {
 			apiKey = ollamaPlaceholderKey
+		}
+	}
+	if c.Format == FormatOllama {
+		// Make the server actually run the model with the profile's context
+		// window; see ollama_ctx.go. No-op without an explicit window.
+		if ct, ok := newOllamaContextTransport(nil, baseURL, c.Model, c.ContextWindowK); ok {
+			qt := client.Transport.(quotaAwareTransport)
+			ct.base = qt.base
+			qt.base = ct
+			client.Transport = qt
 		}
 	}
 	if wireFormat == FormatBedrockGateway {

@@ -771,6 +771,13 @@ function ProfileSheet({
               "Rate limits of 0 mean unlimited, shared across all agents. The context window is in K (thousand tokens); 0 = the 200K default, capped at 1000 (i.e. 1M). Setting it too high keeps compression from ever triggering.",
             )}
           </p>
+          {format === "ollama" && (
+            <p className="-mt-2 text-muted-foreground text-xs">
+              {t(
+                "For Ollama, a context window you set here is also applied on the server: ARTEX creates a variant of the model with that context size (at least 32K) and uses it. Without it, Ollama runs at its default (4K on GPUs under 24 GB) and silently drops older messages. A larger context uses more VRAM.",
+              )}
+            </p>
+          )}
 
           <div className="grid gap-2 sm:grid-cols-3">
             <div className="grid gap-2">
