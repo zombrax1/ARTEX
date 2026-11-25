@@ -412,7 +412,7 @@ func cachePrefixEnabled() bool {
 // workerSystemParts splits workerSystem at the first per-intent volatile
 // segment (workerArtifactSpec(runDir)) without reordering any text:
 //   - staticPart  = body + untrustedContentTail + workerTrafficBlock
-//   - dynamicHead = workerArtifactSpec(runDir) + noiseProfileBlock
+//   - dynamicHead = workerArtifactSpec(runDir) + noiseProfileBlock + toolInventoryBlock
 //
 // Custom DB prompts that reference {{.Now}} remain volatile inside staticPart.
 func workerSystemParts(proxyAddr, caCert, dataDir, runDir string) (staticPart, dynamicHead string) {
@@ -421,7 +421,7 @@ func workerSystemParts(proxyAddr, caCert, dataDir, runDir string) (staticPart, d
 	// the traffic_* tools are registered — so it gates the traffic-tool note.
 	// Optional finding guidance is added for every role after tool resolution.
 	staticPart = body + untrustedContentTail(body) + workerTrafficBlock(caCert != "")
-	dynamicHead = workerArtifactSpec(runDir) + noiseProfileBlock()
+	dynamicHead = workerArtifactSpec(runDir) + noiseProfileBlock() + toolInventoryBlock()
 	return staticPart, dynamicHead
 }
 
@@ -678,7 +678,7 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 	if hooks != nil { // typed-nil guard: only set when concrete (avoids harness panic)
 		opts.Hooks = hooks
 	}
-	opts.Hooks = SpillHooks(opts.Hooks, opts.ToolOutputDir)
+	opts.Hooks = SpillHooks(MissingToolHooks(opts.Hooks), opts.ToolOutputDir)
 	// The session id is the provider-side identity (session header, usage metering)
 	// with or without persistence; Norma only puts it on ctx when it writes a transcript.
 	opts.SessionID = WorkerSessionID(ts.ID(), intent.ID)

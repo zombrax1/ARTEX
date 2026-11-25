@@ -504,7 +504,7 @@ No duplicates, no padding; but when the goal is unmet and there are uncovered, d
 
 func plannerSystem(goal, dataDir, workDir string) string {
 	body := renderSystem("planner", plannerDefaultTmpl, PlannerVars{Goal: goal, DataDir: dataDir, Now: nowStr()})
-	return body + untrustedDataRules + artifactSpec(workDir) + noiseProfileBlock()
+	return body + untrustedDataRules + artifactSpec(workDir) + noiseProfileBlock() + toolInventoryBlock()
 }
 
 // Plan runs one planning round. emit, if non-nil, receives the planner's execution
@@ -632,7 +632,7 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 	if hooks != nil { // typed-nil guard: only set when concrete (avoids harness panic)
 		opts.Hooks = hooks
 	}
-	opts.Hooks = SpillHooks(opts.Hooks, opts.ToolOutputDir)
+	opts.Hooks = SpillHooks(MissingToolHooks(opts.Hooks), opts.ToolOutputDir)
 	// The session id is the provider-side identity (session header, usage metering)
 	// with or without persistence; Norma only puts it on ctx when it writes a transcript.
 	opts.SessionID = fmt.Sprintf("exp%d-planner", ts.ID())

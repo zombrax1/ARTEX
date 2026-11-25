@@ -83,7 +83,7 @@ func TestAssembleWorkerSystemFlagOffAndOnByteExact(t *testing.T) {
 			s2, d2 := buildTail("/data/tasks/1/i20", "probe billing", "beta.example")
 
 			// Legacy baseline (equivalent to flag off).
-			legacySys1, legacyBound1 := deferredSystem(workerSystem("127.0.0.1:8788", tc.caCert, "/data", "/data/tasks/1/i10")+strings.TrimPrefix(d1, workerArtifactSpec("/data/tasks/1/i10")+noiseProfileBlock()), def)
+			legacySys1, legacyBound1 := deferredSystem(workerSystem("127.0.0.1:8788", tc.caCert, "/data", "/data/tasks/1/i10")+strings.TrimPrefix(d1, workerArtifactSpec("/data/tasks/1/i10")+noiseProfileBlock()+toolInventoryBlock()), def)
 			offSys1, offBound1 := assembleWorkerSystem(s1, d1, def, false)
 			if offBound1 != legacyBound1 || !slices.Equal(offSys1, legacySys1) {
 				t.Fatalf("flag off diverged from legacy: got (%d, len=%d) want (%d, len=%d)", offBound1, len(offSys1), legacyBound1, len(legacySys1))

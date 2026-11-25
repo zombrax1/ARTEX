@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -222,6 +223,12 @@ func run() int {
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Minute,
 		IdleTimeout:       2 * time.Minute,
+	}
+
+	// Agents are told which well-known tools are missing; say it here too, so an
+	// operator of a native install sees what to add.
+	if _, missing := agent.ToolInventory(); len(missing) > 0 {
+		log.Printf("[tools] not on PATH (agents will use alternatives): %s", strings.Join(missing, ", "))
 	}
 
 	go func() {
