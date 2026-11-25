@@ -152,8 +152,14 @@ func missingToolIn(command string) string {
 	if hasOr {
 		return ""
 	}
+	// A command that changes how programs are found (a PATH assignment, a
+	// sourced virtualenv or profile, an alias) may run a tool this process cannot
+	// see: leave it to Bash.
+	if strings.Contains(command, "PATH") {
+		return ""
+	}
 	for _, seg := range segs {
-		if f := strings.Fields(strings.TrimLeft(seg, "({! \t")); len(f) > 0 && toolLookups[f[0]] {
+		if f := strings.Fields(strings.TrimLeft(seg, "({! \t")); len(f) > 0 && (toolLookups[f[0]] || pathChangers[f[0]]) {
 			return ""
 		}
 	}
@@ -171,6 +177,10 @@ func missingToolIn(command string) string {
 	}
 	return ""
 }
+
+// pathChangers are commands that can change which programs a later command in
+// the same line finds.
+var pathChangers = map[string]bool{"source": true, ".": true, "alias": true, "conda": true, "mamba": true, "pyenv": true, "nvm": true, "eval": true}
 
 // toolLookups are commands that check whether a program exists.
 var toolLookups = map[string]bool{"command": true, "which": true, "type": true, "hash": true, "whereis": true}

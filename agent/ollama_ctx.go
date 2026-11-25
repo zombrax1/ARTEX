@@ -143,14 +143,40 @@ func (t *ollamaContextTransport) RoundTrip(req *http.Request) (*http.Response, e
 	if err != nil {
 		return nil, err
 	}
-	out := req.Clone(req.Context())
-	if rewritten, ok := rewriteRequestModel(body, t.model, t.variant); ok {
-		body = rewritten
+	rewritten, ok := rewriteRequestModel(body, t.model, t.variant)
+	if !ok {
+		return t.base.RoundTrip(withBody(req, body))
 	}
+	resp, err := t.base.RoundTrip(withBody(req, rewritten))
+	if err != nil || resp.StatusCode != http.StatusNotFound {
+		return resp, err
+	}
+	// 404: the variant is gone (removed with `ollama rm`, or a fresh server at
+	// the same URL). Forget it so the next request creates it again, and send
+	// this one to the base model so it does not fail.
+	resp.Body.Close()
+	t.forgetVariant()
+	log.Printf("[llm] ollama: %q not found, using %q for this request and recreating the variant on the next", t.variant, t.model)
+	return t.base.RoundTrip(withBody(req, body))
+}
+
+// withBody clones req with body as its (replayable) body.
+func withBody(req *http.Request, body []byte) *http.Request {
+	out := req.Clone(req.Context())
 	out.Body = io.NopCloser(bytes.NewReader(body))
 	out.ContentLength = int64(len(body))
 	out.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
-	return t.base.RoundTrip(out)
+	return out
+}
+
+// forgetVariant marks the variant as not created, so the next request creates
+// it again.
+func (t *ollamaContextTransport) forgetVariant() {
+	st := ollamaVariantFor(t.apiRoot + "|" + t.variant)
+	st.mu.Lock()
+	st.ready = false
+	st.failedAt = time.Time{}
+	st.mu.Unlock()
 }
 
 // rewriteRequestModel swaps the top-level "model" of a JSON request body from

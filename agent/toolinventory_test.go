@@ -65,6 +65,10 @@ func TestMissingToolIn(t *testing.T) {
 		{"nikto -h x || nuclei -u x", ""},
 		{"which nikto && nikto -h x", ""},
 		{"echo 'a || b'; nikto -h x", "nikto"},
+		{"PATH=/opt/security/bin:$PATH nikto -h example.com", ""},
+		{"export PATH=$HOME/go/bin:$PATH; nikto -h x", ""},
+		{"source venv/bin/activate && sqlmap -u x", ""},
+		{". ~/.profile; nikto -h x", ""},
 	} {
 		if got := missingToolIn(tc.cmd); got != tc.want {
 			t.Errorf("missingToolIn(%q) = %q, want %q", tc.cmd, got, tc.want)
