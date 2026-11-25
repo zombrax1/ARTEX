@@ -61,6 +61,10 @@ func TestMissingToolIn(t *testing.T) {
 		{"my-custom-tool --flag", ""},
 		{"nmap -sV x 2>&1 | tee out.txt", ""},
 		{"nmap -sV x\nsqlmap -u x", "sqlmap"},
+		{"command -v nikto && nikto -h example.com || nuclei -u https://example.com", ""},
+		{"nikto -h x || nuclei -u x", ""},
+		{"which nikto && nikto -h x", ""},
+		{"echo 'a || b'; nikto -h x", "nikto"},
 	} {
 		if got := missingToolIn(tc.cmd); got != tc.want {
 			t.Errorf("missingToolIn(%q) = %q, want %q", tc.cmd, got, tc.want)

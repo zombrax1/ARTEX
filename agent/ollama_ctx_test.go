@@ -55,6 +55,7 @@ type fakeOllama struct {
 	mu          sync.Mutex
 	createCalls int
 	createBody  map[string]any
+	createAuth  string
 	failCreate  bool
 	chatModels  []string
 }
@@ -67,6 +68,7 @@ func (f *fakeOllama) handler() http.Handler {
 		switch r.URL.Path {
 		case "/api/create":
 			f.createCalls++
+			f.createAuth = r.Header.Get("Authorization")
 			_ = json.Unmarshal(body, &f.createBody)
 			if f.failCreate {
 				http.Error(w, `{"error":"unknown endpoint"}`, http.StatusNotFound)
@@ -101,7 +103,7 @@ func TestOllamaProfileRunsWithItsContextWindow(t *testing.T) {
 	srv := httptest.NewServer(f.handler())
 	defer srv.Close()
 
-	cfg := ConfigFrom("ollama", "qwen3:14b", srv.URL, "", "")
+	cfg := ConfigFrom("ollama", "qwen3:14b", srv.URL, "secret-token", "")
 	cfg.ContextWindowK = 32
 	cfg.Stream = false
 	for i := 0; i < 2; i++ {
@@ -113,6 +115,9 @@ func TestOllamaProfileRunsWithItsContextWindow(t *testing.T) {
 	defer f.mu.Unlock()
 	if f.createCalls != 1 {
 		t.Fatalf("create calls = %d, want 1", f.createCalls)
+	}
+	if f.createAuth != "Bearer secret-token" {
+		t.Fatalf("create Authorization = %q, want the profile's key", f.createAuth)
 	}
 	if f.createBody["from"] != "qwen3:14b" || f.createBody["model"] != "qwen3:14b-artex-ctx32k" {
 		t.Fatalf("create body = %v", f.createBody)
@@ -168,17 +173,17 @@ func TestOllamaContextRetriesAfterBackoff(t *testing.T) {
 	}
 	now := time.Unix(1000, 0)
 	ct.now = func() time.Time { return now }
-	if ct.ensureVariant(context.Background()) {
+	if ct.ensureVariant(context.Background(), "") {
 		t.Fatal("create failed: want false")
 	}
 	f.mu.Lock()
 	f.failCreate = false
 	f.mu.Unlock()
-	if ct.ensureVariant(context.Background()) {
+	if ct.ensureVariant(context.Background(), "") {
 		t.Fatal("inside the backoff: want false without a new create")
 	}
 	now = now.Add(ollamaCtxRetryAfter + time.Second)
-	if !ct.ensureVariant(context.Background()) {
+	if !ct.ensureVariant(context.Background(), "") {
 		t.Fatal("after the backoff the create succeeds: want true")
 	}
 	f.mu.Lock()

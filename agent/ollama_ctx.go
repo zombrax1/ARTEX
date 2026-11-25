@@ -135,7 +135,7 @@ func (t *ollamaContextTransport) RoundTrip(req *http.Request) (*http.Response, e
 	if req.Method != http.MethodPost || !strings.HasSuffix(req.URL.Path, "/chat/completions") || req.Body == nil {
 		return t.base.RoundTrip(req)
 	}
-	if !t.ensureVariant(req.Context()) {
+	if !t.ensureVariant(req.Context(), req.Header.Get("Authorization")) {
 		return t.base.RoundTrip(req)
 	}
 	body, err := io.ReadAll(req.Body)
@@ -180,7 +180,10 @@ func rewriteRequestModel(body []byte, from, to string) ([]byte, bool) {
 // ensureVariant reports whether the variant exists, creating it if needed. A
 // failure is remembered for ollamaCtxRetryAfter so a server that cannot create
 // models is not asked on every request.
-func (t *ollamaContextTransport) ensureVariant(ctx context.Context) bool {
+//
+// auth is the Authorization header of the chat request that triggered it, so a
+// server behind an authenticating proxy accepts the create call too.
+func (t *ollamaContextTransport) ensureVariant(ctx context.Context, auth string) bool {
 	st := ollamaVariantFor(t.apiRoot + "|" + t.variant)
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -190,7 +193,7 @@ func (t *ollamaContextTransport) ensureVariant(ctx context.Context) bool {
 	if !st.failedAt.IsZero() && t.now().Sub(st.failedAt) < ollamaCtxRetryAfter {
 		return false
 	}
-	if err := t.createVariant(ctx); err != nil {
+	if err := t.createVariant(ctx, auth); err != nil {
 		st.failedAt = t.now()
 		log.Printf("[llm] ollama: could not create %q with num_ctx=%d, using %q at the server's default context (retry in %s): %v",
 			t.variant, t.numCtx, t.model, ollamaCtxRetryAfter, err)
@@ -202,7 +205,7 @@ func (t *ollamaContextTransport) ensureVariant(ctx context.Context) bool {
 	return true
 }
 
-func (t *ollamaContextTransport) createVariant(ctx context.Context) error {
+func (t *ollamaContextTransport) createVariant(ctx context.Context, auth string) error {
 	payload, err := json.Marshal(map[string]any{
 		"model":      t.variant,
 		"from":       t.model,
@@ -221,6 +224,9 @@ func (t *ollamaContextTransport) createVariant(ctx context.Context) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		return err

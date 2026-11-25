@@ -141,12 +141,23 @@ func renderToolInventory(inv toolInventory) string {
 // program and that is not on PATH, or "". It is conservative: it only looks at
 // the program of each simple command (after env assignments and wrappers such as
 // sudo or timeout), honours quotes, and gives up on heredocs, whose body is not
-// commands.
+// commands. A command with an unquoted || or a tool lookup (command -v, which,
+// type, hash) is never refused: the missing tool may be a guarded branch with an
+// installed fallback, and only Bash knows which branch runs.
 func missingToolIn(command string) string {
 	if strings.Contains(command, "<<") {
 		return ""
 	}
-	for _, seg := range splitShellCommands(command) {
+	segs, hasOr := splitShellCommandsOr(command)
+	if hasOr {
+		return ""
+	}
+	for _, seg := range segs {
+		if f := strings.Fields(strings.TrimLeft(seg, "({! \t")); len(f) > 0 && toolLookups[f[0]] {
+			return ""
+		}
+	}
+	for _, seg := range segs {
 		prog := commandProgram(seg)
 		if prog == "" {
 			continue
@@ -161,10 +172,19 @@ func missingToolIn(command string) string {
 	return ""
 }
 
+// toolLookups are commands that check whether a program exists.
+var toolLookups = map[string]bool{"command": true, "which": true, "type": true, "hash": true, "whereis": true}
+
 // splitShellCommands splits a command line at unquoted ; & | and newlines.
 // Text inside quotes, $(...) and backticks is kept in the segment it appears in.
 func splitShellCommands(s string) []string {
-	var out []string
+	out, _ := splitShellCommandsOr(s)
+	return out
+}
+
+// splitShellCommandsOr is splitShellCommands that also reports whether the line
+// has an unquoted, top-level ||.
+func splitShellCommandsOr(s string) (out []string, hasOr bool) {
 	var cur strings.Builder
 	var quote byte // 0, '\'' or '"'
 	depth := 0     // $( ... ) and backtick nesting
@@ -202,13 +222,16 @@ func splitShellCommands(s string) []string {
 				depth++
 			}
 		case depth == 0 && (c == ';' || c == '&' || c == '|' || c == '\n'):
+			if c == '|' && i+1 < len(s) && s[i+1] == '|' {
+				hasOr = true
+			}
 			flush()
 			continue
 		}
 		cur.WriteByte(c)
 	}
 	flush()
-	return out
+	return out, hasOr
 }
 
 // commandWrappers run their argument as the program.
