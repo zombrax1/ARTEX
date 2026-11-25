@@ -689,13 +689,17 @@ func TestConnection(ctx context.Context, c Config) (time.Duration, string, error
 	// EscalateMaxTokens stays false: don't raise the cap and retry on truncation, to
 	// avoid burning tokens in a resume loop.
 	reply, err := agentcore.Run(ctx, agentcore.Options{
-		Provider:       prov,
-		SystemPrompt:   []string{"You are a connection test. Just output the two characters OK — no thinking, no explanation, nothing else."},
-		Tools:          []actool.CoreTool{}, // not nil: nil means the SDK's unconfined file and shell tools
-		PermissionMode: acperm.ModeBypass,
-		MaxTurns:       1,
-		MaxTokens:      8192,
-		NonStreaming:   !c.Stream, // use this profile's real send/receive mode for the connection test
+		Provider:     prov,
+		SystemPrompt: []string{"You are a connection test. Just output the two characters OK — no thinking, no explanation, nothing else."},
+		Tools:        []actool.CoreTool{}, // not nil: nil means the SDK's unconfined file and shell tools
+		// Without this the SDK still adds its background-task tools (TaskOutput,
+		// TaskStop, TaskList, Monitor), so the request carries tool schemas and
+		// some models (e.g. via Ollama) answer "ping" with tool calls, not OK.
+		DisableBackgroundTasks: true,
+		PermissionMode:         acperm.ModeBypass,
+		MaxTurns:               1,
+		MaxTokens:              8192,
+		NonStreaming:           !c.Stream, // use this profile's real send/receive mode for the connection test
 	}, "ping")
 	lat := time.Since(start)
 	if err != nil {
