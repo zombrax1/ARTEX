@@ -703,14 +703,20 @@ func (s *Server) providerForProfile(id int64) (llm.Provider, agent.Config, bool)
 	}
 	// Wrap with recorder, tagged with this profile's name, then with the profile's
 	// concurrency gate. The gate sits outside the recorder so recorded latency is
-	// the model's own time, not time spent queued behind other requests.
+	// the model's own time, not time spent queued behind other requests. Every
+	// profile gets a gate, even an unlimited one, so a cap saved later also binds
+	// consumers still holding this provider.
+	limit, gate := 0, (*llmgate.Gate)(nil)
 	if p, _ := s.m.pg.ProfileByID(id); p != nil {
+		limit, gate = p.MaxConcurrent, s.profileGate(id)
 		prov = llmrec.Wrap(prov, s.m.PG(), cfg.Model, p.Name, cfg.ThinkingType, cfg.ReasoningEffort, s.m.LLMRecordEnabled)
-		prov = llmgate.Wrap(prov, s.profileGate(id, p.MaxConcurrent))
+		prov = llmgate.Wrap(prov, gate)
 		prov = bindSideProvider(prov, cfg, id, p.Name)
 	}
 	s.provCacheMu.Lock()
 	if generation != s.provCacheGen {
+		// A save invalidated the cache while we read the profile: our limit may
+		// be stale, so neither publish the provider nor touch the gate.
 		s.provCacheMu.Unlock()
 		return s.providerForProfile(id)
 	}
@@ -718,38 +724,42 @@ func (s *Server) providerForProfile(id int64) (llm.Provider, agent.Config, bool)
 		prov, cfg = e.prov, e.cfg
 	} else {
 		s.provByProfile[id] = &provEntry{prov: prov, cfg: cfg}
+		if gate != nil {
+			setGateLimit(id, gate, limit) // same lock + generation as the publish
+		}
 		log.Printf("[engine] built provider for LLM profile %d (%s / %s)", id, cfg.Provider(), cfg.Model)
 	}
 	s.provCacheMu.Unlock()
 	return prov, cfg, true
 }
 
-// profileGate returns the shared concurrency gate for a profile, updated to
-// limit (<=0 = unlimited). It returns nil while the profile has never had a
-// limit, so an unlimited profile pays nothing. Once a gate exists it is kept
-// (with its limit updated, possibly to unlimited) so requests still in flight on
-// an older provider keep counting against the cap.
-func (s *Server) profileGate(id int64, limit int) *llmgate.Gate {
+// profileGate returns the shared concurrency gate for a profile, creating it
+// unlimited on first use. It is kept across provider-cache rebuilds so requests
+// still in flight on an older provider keep counting against the current cap.
+// The limit is only set by providerForProfile when it publishes a provider.
+func (s *Server) profileGate(id int64) *llmgate.Gate {
 	s.provCacheMu.Lock()
 	defer s.provCacheMu.Unlock()
 	g := s.llmGates[id]
 	if g == nil {
-		if limit <= 0 {
-			return nil
-		}
 		if s.llmGates == nil {
 			s.llmGates = map[int64]*llmgate.Gate{}
 		}
-		g = llmgate.New(limit)
+		g = llmgate.New(0)
 		s.llmGates[id] = g
-		log.Printf("[engine] LLM profile %d: at most %d concurrent requests", id, limit)
-		return g
-	}
-	if g.Limit() != limit {
-		log.Printf("[engine] LLM profile %d: concurrent request cap %d → %d (0 = unlimited)", id, g.Limit(), limit)
-		g.SetLimit(limit)
 	}
 	return g
+}
+
+// setGateLimit applies a profile's saved cap (<=0 = unlimited) to its gate.
+func setGateLimit(id int64, g *llmgate.Gate, limit int) {
+	if limit < 0 {
+		limit = 0
+	}
+	if old := g.Limit(); old != limit {
+		log.Printf("[engine] LLM profile %d: concurrent request cap %d → %d (0 = unlimited)", id, old, limit)
+		g.SetLimit(limit)
+	}
 }
 
 // chatAgentForProfile returns a ChatAgent built from a specific LLM profile, cached
