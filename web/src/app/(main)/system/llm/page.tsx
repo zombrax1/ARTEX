@@ -28,7 +28,14 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { t } from "@/i18n";
 import { api } from "@/lib/api";
-import type { LLMPoolMember, LLMPoolStatus, LLMProfile, LLMQueueStat, LLMRetryOverride } from "@/lib/types";
+import type {
+  LLMPoolMember,
+  LLMPoolStatus,
+  LLMProfile,
+  LLMQueueStat,
+  LLMRetryOverride,
+  OllamaModelInfo,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import { ProfileRetryFields, RetryPolicyPanel, ZERO_OVERRIDE } from "./_components/retry";
@@ -361,6 +368,7 @@ function ProfileSheet({
   const [testing, setTesting] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [models, setModels] = React.useState<string[]>([]);
+  const [modelInfo, setModelInfo] = React.useState<Record<string, OllamaModelInfo>>({}); // Ollama only: tools / size per model
   const [loadingModels, setLoadingModels] = React.useState(false);
   const [modelsOpen, setModelsOpen] = React.useState(false);
   const [modelQuery, setModelQuery] = React.useState(""); // filter text for the loaded model list; reset on open/close
@@ -397,6 +405,7 @@ function ProfileSheet({
     setApiKey("");
     setKeyHint(profile?.api_key_hint ?? "");
     setModels([]);
+    setModelInfo({});
     setModelsOpen(false);
     setModelQuery("");
   }, [open, profile]);
@@ -415,11 +424,13 @@ function ProfileSheet({
     if (loadingModels) return;
     setLoadingModels(true);
     setModels([]);
+    setModelInfo({});
     setModelQuery("");
     try {
       const r = await api.fetchLLMModels(format, baseUrl, apiKey, proxy, profileId);
       if (r.ok && r.models && r.models.length > 0) {
         setModels(r.models);
+        setModelInfo(r.details ?? {});
         setModelsOpen(true);
         toast.success(t("Loaded {count} models", { count: r.models.length }));
       } else {
@@ -641,7 +652,10 @@ function ProfileSheet({
                               setModelsOpen(false);
                             }}
                           >
-                            {m}
+                            <span className="flex items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate">{m}</span>
+                              <ModelFacts info={modelInfo[m]} />
+                            </span>
                           </button>
                         ))
                       )}
@@ -650,6 +664,13 @@ function ProfileSheet({
                 )}
               </Popover>
             </div>
+            {format === "ollama" && modelInfo[model.trim()]?.tools === false && (
+              <p className="text-destructive text-xs">
+                {t(
+                  "This model does not support tool calls. ARTEX agents work only through tools, so tasks on this profile will not make progress. Pick a model marked with tool support.",
+                )}
+              </p>
+            )}
           </div>
 
           <div className="grid gap-2">
@@ -956,6 +977,26 @@ function ProfileSheet({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Size and tool support next to an Ollama model in the picker. Only shown when the server reported them.
+function ModelFacts({ info }: { info?: OllamaModelInfo }) {
+  if (!info) return null;
+  const gb = info.size_bytes ? (info.size_bytes / 1e9).toFixed(1) : "";
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 font-sans text-[10px] text-muted-foreground">
+      {info.parameter_size && <span>{info.parameter_size}</span>}
+      {gb && <span>{t("{size} GB", { size: gb })}</span>}
+      {info.tools === false && (
+        <span
+          className="rounded bg-destructive/10 px-1 text-destructive"
+          title={t("This model cannot call tools, so ARTEX agents cannot use it")}
+        >
+          {t("no tools")}
+        </span>
+      )}
+    </span>
+  );
+}
 
 // "2 running · 5 waiting" on a profile card while requests are in flight. Waiting requests mean the profile's
 // max-concurrent cap is the bottleneck (for a local GPU, usually the GPU itself). Hidden when idle.

@@ -2731,5 +2731,9 @@
   "For Ollama, a context window you set here is also applied on the server: ARTEX creates a variant of the model with that context size (at least 32K) and uses it. Without it, Ollama runs at its default (4K on GPUs under 24 GB) and silently drops older messages. A larger context uses more VRAM.": "Ollama için burada ayarladığınız bağlam penceresi sunucuda da uygulanır: ARTEX modelin bu bağlam boyutuna (en az 32K) sahip bir varyantını oluşturur ve onu kullanır. Ayarlanmazsa Ollama varsayılanla (24 GB altındaki GPU'larda 4K) çalışır ve eski mesajları sessizce atar. Daha büyük bir bağlam daha fazla VRAM kullanır.",
   "Requests running on this profile now, and requests waiting for a free slot": "Bu profilde şu anda çalışan istekler ve boş bir yer bekleyen istekler",
   "{running} running · {queued} waiting": "{running} çalışıyor · {queued} bekliyor",
-  "{running} running": "{running} çalışıyor"
+  "{running} running": "{running} çalışıyor",
+  "This model does not support tool calls. ARTEX agents work only through tools, so tasks on this profile will not make progress. Pick a model marked with tool support.": "Bu model araç çağrılarını desteklemiyor. ARTEX ajanları yalnızca araçlarla çalışır, bu nedenle bu profildeki görevler ilerlemez. Araç desteği olan bir model seçin.",
+  "{size} GB": "{size} GB",
+  "This model cannot call tools, so ARTEX agents cannot use it": "Bu model araç çağıramaz, bu yüzden ARTEX ajanları onu kullanamaz",
+  "no tools": "araç yok"
 }

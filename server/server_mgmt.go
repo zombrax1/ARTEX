@@ -2884,7 +2884,21 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if len(models) > 0 {
-			writeJSON(w, 200, map[string]any{"ok": true, "models": models})
+			resp := map[string]any{"ok": true, "models": models}
+			if provider == "ollama" {
+				// Tool support and size per model from the native API, so the
+				// picker can flag models that cannot run an agent.
+				var validate func(string) error
+				if !defaultOllama {
+					validate = func(u string) error {
+						_, err := guard.validateURL(r.Context(), u, "endpoint")
+						return err
+					}
+				}
+				root := strings.TrimSuffix(c.url, "/v1/models")
+				resp["details"] = ollamaModelDetails(r.Context(), client, root, c.hdr, models, validate)
+			}
+			writeJSON(w, 200, resp)
 			return
 		}
 		emptyOK = true // 200 but no model ids — keep trying other candidates

@@ -1247,6 +1247,16 @@ export interface LLMPoolMember {
   last_at?: string;
 }
 
+// Per-model facts an Ollama server reports when its models are listed (POST /api/llm/models, provider ollama).
+// tools is absent when the server does not say; ARTEX agents need tool calls, so false means the model cannot run a task.
+export interface OllamaModelInfo {
+  tools?: boolean;
+  size_bytes?: number;
+  parameter_size?: string;
+  quantization?: string;
+  context_length?: number; // the model's trained maximum, in tokens
+}
+
 // Live per-profile request counts under the profile's max-concurrent cap (GET /api/llm/queue).
 // A profile that has sent no request since the server started is absent.
 export interface LLMQueueStat {

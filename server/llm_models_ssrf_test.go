@@ -143,11 +143,11 @@ func TestLLMModelsDefaultOllamaAllowedWithoutSeam(t *testing.T) {
 	// must NOT be refused by URL validation or dial control even with no test seam.
 	var ollamaHits atomic.Int32
 	fakeOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ollamaHits.Add(1)
 		if r.URL.Path != "/v1/models" {
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusNotFound) // the native-API detail calls
 			return
 		}
+		ollamaHits.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":[{"id":"llama3.2"}]}`))
 	}))
@@ -193,7 +193,9 @@ func TestLLMModelsDefaultOllamaAllowedWithoutSeam(t *testing.T) {
 func TestLLMModelsPrivateEndpointsAllowList(t *testing.T) {
 	var allowedHits atomic.Int32
 	allowedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowedHits.Add(1)
+		if r.URL.Path == "/v1/models" { // not the native-API detail calls
+			allowedHits.Add(1)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":[{"id":"local-llama"}]}`))
 	}))
@@ -248,7 +250,9 @@ func TestLLMModelsPrivateEndpointsAllowList(t *testing.T) {
 	// stays refused on another port, and still validates scheme & redirects.
 	var dockerHits atomic.Int32
 	dockerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		dockerHits.Add(1)
+		if strings.HasSuffix(r.URL.Path, "/v1/models") { // not the native-API detail calls
+			dockerHits.Add(1)
+		}
 		if r.URL.Path == "/redirect/v1/models" {
 			http.Redirect(w, r, otherPortSrv.URL+"/secret", http.StatusFound)
 			return

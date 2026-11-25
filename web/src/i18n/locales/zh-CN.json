@@ -2731,5 +2731,9 @@
   "For Ollama, a context window you set here is also applied on the server: ARTEX creates a variant of the model with that context size (at least 32K) and uses it. Without it, Ollama runs at its default (4K on GPUs under 24 GB) and silently drops older messages. A larger context uses more VRAM.": "对于 Ollama，这里设置的上下文窗口也会应用到服务器上：ARTEX 会创建一个使用该上下文大小（至少 32K）的模型变体并使用它。未设置时，Ollama 使用默认值（显存低于 24 GB 的 GPU 上为 4K），并会静默丢弃较早的消息。上下文越大，占用的显存越多。",
   "Requests running on this profile now, and requests waiting for a free slot": "此配置当前正在运行的请求，以及等待空闲名额的请求",
   "{running} running · {queued} waiting": "{running} 个运行中 · {queued} 个等待中",
-  "{running} running": "{running} 个运行中"
+  "{running} running": "{running} 个运行中",
+  "This model does not support tool calls. ARTEX agents work only through tools, so tasks on this profile will not make progress. Pick a model marked with tool support.": "此模型不支持工具调用。ARTEX 智能体只能通过工具工作，因此使用此配置的任务将无法推进。请选择支持工具的模型。",
+  "{size} GB": "{size} GB",
+  "This model cannot call tools, so ARTEX agents cannot use it": "此模型无法调用工具，ARTEX 智能体无法使用它",
+  "no tools": "无工具"
 }

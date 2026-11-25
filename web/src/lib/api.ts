@@ -60,6 +60,7 @@ import type {
   JudgeUsage,
   LLMPoolStatus,
   LLMQueueStatus,
+  OllamaModelInfo,
   LLMProfile,
   LLMRecordDetail,
   LLMRecordItem,
@@ -1199,7 +1200,7 @@ export const api = {
   llmRetryPolicy: () => get<LLMRetryPolicy>("/llm/retry-policy"),
   saveLLMRetryPolicy: (p: LLMRetryPolicy) => post<LLMRetryPolicy>("/llm/retry-policy", p),
   fetchLLMModels: (provider: string, base_url: string, api_key: string, proxy = "", profile_id?: number) =>
-    post<{ ok: boolean; error?: string; models?: string[] }>("/llm/models", {
+    post<{ ok: boolean; error?: string; models?: string[]; details?: Record<string, OllamaModelInfo> }>("/llm/models", {
       provider,
       base_url,
       api_key,
