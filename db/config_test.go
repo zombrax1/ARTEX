@@ -210,3 +210,44 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+func TestProfileMaxConcurrentRoundTrip(t *testing.T) {
+	d, err := Open(testDSN(t))
+	if err != nil {
+		SkipPGUnavailable(t, err)
+	}
+	defer d.Close()
+
+	pid, err := d.SaveProfile(&LLMProfile{Name: "t-maxconc", Format: "ollama", Model: "qwen", BaseURL: "http://127.0.0.1:11434", MaxConcurrent: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Exec(`DELETE FROM llm_profiles WHERE id=$1`, pid)
+	check := func(want int) {
+		t.Helper()
+		p, err := d.ProfileByID(pid)
+		if err != nil || p == nil {
+			t.Fatalf("ProfileByID: %v", err)
+		}
+		if p.MaxConcurrent != want {
+			t.Fatalf("max_concurrent = %d, want %d", p.MaxConcurrent, want)
+		}
+		list, err := d.ListProfiles()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, lp := range list {
+			if lp.ID == pid && lp.MaxConcurrent != want {
+				t.Fatalf("listed max_concurrent = %d, want %d", lp.MaxConcurrent, want)
+			}
+		}
+	}
+	check(2)
+	// Update without a key (the keyless UPDATE branch), then clamp both ends.
+	for _, tc := range []struct{ in, want int }{{1, 1}, {-5, 0}, {MaxProfileConcurrent + 10, MaxProfileConcurrent}, {0, 0}} {
+		if _, err := d.SaveProfile(&LLMProfile{ID: pid, Name: "t-maxconc", Format: "ollama", Model: "qwen", BaseURL: "http://127.0.0.1:11434", MaxConcurrent: tc.in}); err != nil {
+			t.Fatal(err)
+		}
+		check(tc.want)
+	}
+}

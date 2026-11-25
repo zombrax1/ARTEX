@@ -70,6 +70,11 @@ type LLMProfile struct {
 	// request built from this profile. "" = don't override (keep the default UA);
 	// old profiles behave exactly as before. Maps to agent.Config.UserAgent.
 	UserAgent string `json:"user_agent"`
+	// MaxConcurrent caps how many requests to this profile may be in flight at
+	// once, across every agent and task that uses it. 0 = unlimited (the
+	// historical behaviour). Requests beyond the cap wait in a FIFO queue, which
+	// keeps a local GPU (e.g. Ollama) from being swamped by parallel work.
+	MaxConcurrent int `json:"max_concurrent"`
 	// Cost ledger: EUR per 1M tokens (0 = unset; cost is computed only when a
 	// price is set). Set through the same profile API/SaveProfile path.
 	PriceInputPerM      float64 `json:"price_input_per_m,omitempty"`
@@ -95,8 +100,8 @@ type RetryOverride struct {
 // profileCols is the read column list (hint variant, no api key) shared by the
 // list query; profileColsKey is the same with api_key for the single-row loads.
 const profileRetryCols = `COALESCE(retry_connect_attempts,0),COALESCE(retry_connect_interval_ms,0),COALESCE(retry_empty_attempts,0),COALESCE(retry_empty_interval_ms,0),COALESCE(retry_stream_attempts,0),COALESCE(retry_stream_interval_ms,0)`
-const profileCols = `id,name,format,COALESCE(base_url,''),COALESCE(proxy,''),model,COALESCE(api_key_hint,''),rate_per_second,rate_per_minute,context_window_k,COALESCE(reasoning_effort,''),is_default,priority,pool_exclude,COALESCE(thinking_type,''),COALESCE(streaming,true),COALESCE(max_tokens,0),COALESCE(max_tokens_field,''),COALESCE(session_header_key,''),` + profileRetryCols + `,COALESCE(price_input_per_m,0),COALESCE(price_output_per_m,0),COALESCE(price_cache_read_per_m,0),COALESCE(price_cache_write_per_m,0),COALESCE(user_agent,''),COALESCE(custom_headers,'')`
-const profileColsKey = `id,name,format,COALESCE(base_url,''),COALESCE(proxy,''),model,COALESCE(api_key,''),rate_per_second,rate_per_minute,context_window_k,COALESCE(reasoning_effort,''),is_default,priority,pool_exclude,COALESCE(thinking_type,''),COALESCE(streaming,true),COALESCE(max_tokens,0),COALESCE(max_tokens_field,''),COALESCE(session_header_key,''),` + profileRetryCols + `,COALESCE(price_input_per_m,0),COALESCE(price_output_per_m,0),COALESCE(price_cache_read_per_m,0),COALESCE(price_cache_write_per_m,0),COALESCE(user_agent,''),COALESCE(custom_headers,'')`
+const profileCols = `id,name,format,COALESCE(base_url,''),COALESCE(proxy,''),model,COALESCE(api_key_hint,''),rate_per_second,rate_per_minute,context_window_k,COALESCE(reasoning_effort,''),is_default,priority,pool_exclude,COALESCE(thinking_type,''),COALESCE(streaming,true),COALESCE(max_tokens,0),COALESCE(max_tokens_field,''),COALESCE(session_header_key,''),` + profileRetryCols + `,COALESCE(price_input_per_m,0),COALESCE(price_output_per_m,0),COALESCE(price_cache_read_per_m,0),COALESCE(price_cache_write_per_m,0),COALESCE(user_agent,''),COALESCE(custom_headers,''),COALESCE(max_concurrent,0)`
+const profileColsKey = `id,name,format,COALESCE(base_url,''),COALESCE(proxy,''),model,COALESCE(api_key,''),rate_per_second,rate_per_minute,context_window_k,COALESCE(reasoning_effort,''),is_default,priority,pool_exclude,COALESCE(thinking_type,''),COALESCE(streaming,true),COALESCE(max_tokens,0),COALESCE(max_tokens_field,''),COALESCE(session_header_key,''),` + profileRetryCols + `,COALESCE(price_input_per_m,0),COALESCE(price_output_per_m,0),COALESCE(price_cache_read_per_m,0),COALESCE(price_cache_write_per_m,0),COALESCE(user_agent,''),COALESCE(custom_headers,''),COALESCE(max_concurrent,0)`
 
 // scanProfile reads one row in the profileCols / profileColsKey column order. The
 // 7th column lands in APIKeyHint or APIKey depending on which list the caller used.
@@ -108,7 +113,7 @@ func scanProfile(sc interface{ Scan(...any) error }, into *string, p *LLMProfile
 		&p.Retry.Empty.Attempts, &p.Retry.Empty.IntervalMS,
 		&p.Retry.Stream.Attempts, &p.Retry.Stream.IntervalMS,
 		&p.PriceInputPerM, &p.PriceOutputPerM, &p.PriceCacheReadPerM, &p.PriceCacheWritePerM,
-		&p.UserAgent, &p.CustomHeaders)
+		&p.UserAgent, &p.CustomHeaders, &p.MaxConcurrent)
 	if err != nil {
 		return err
 	}
@@ -250,8 +255,22 @@ VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,NULLIF($6,''),NULLIF($7,''),$8,$9,$
 // saveProfilePrices writes the cost-ledger columns (kept out of the three main
 // statements so the pricing surface stays one small, auditable write).
 func (d *DB) saveProfilePrices(id int64, p *LLMProfile) (sql.Result, error) {
-	return d.Exec(`UPDATE llm_profiles SET price_input_per_m=($1),price_output_per_m=($2),price_cache_read_per_m=($3),price_cache_write_per_m=($4) WHERE id=$5`,
+	res, err := d.Exec(`UPDATE llm_profiles SET price_input_per_m=($1),price_output_per_m=($2),price_cache_read_per_m=($3),price_cache_write_per_m=($4) WHERE id=$5`,
 		p.PriceInputPerM, p.PriceOutputPerM, p.PriceCacheReadPerM, p.PriceCacheWritePerM, id)
+	if err != nil {
+		return res, err
+	}
+	return d.saveProfileMaxConcurrent(id, p.MaxConcurrent)
+}
+
+// MaxProfileConcurrent bounds max_concurrent; anything above is clamped.
+const MaxProfileConcurrent = 256
+
+// saveProfileMaxConcurrent writes the in-flight request cap, clamped to
+// [0, MaxProfileConcurrent] (0 = unlimited).
+func (d *DB) saveProfileMaxConcurrent(id int64, n int) (sql.Result, error) {
+	n = min(max(n, 0), MaxProfileConcurrent)
+	return d.Exec(`UPDATE llm_profiles SET max_concurrent=$1 WHERE id=$2`, n, id)
 }
 
 var (

@@ -344,6 +344,7 @@ function ProfileSheet({
   const [keyHint, setKeyHint] = React.useState("");
   const [rps, setRps] = React.useState("0");
   const [rpm, setRpm] = React.useState("0");
+  const [maxConc, setMaxConc] = React.useState("0"); // max in-flight requests; 0 = unlimited
   const [cw, setCw] = React.useState("0"); // context window (K tokens); 0 = default 200K
   const [thinkingType, setThinkingType] = React.useState(NONE);
   const [effort, setEffort] = React.useState(NONE);
@@ -379,6 +380,7 @@ function ProfileSheet({
     setProxy(profile?.proxy ?? "");
     setRps(String(profile?.rate_per_second ?? 0));
     setRpm(String(profile?.rate_per_minute ?? 0));
+    setMaxConc(String(profile?.max_concurrent ?? 0));
     setCw(String(profile?.context_window_k ?? 0));
     setThinkingType(fromStore(profile?.thinking_type));
     setEffort(fromStore(profile?.reasoning_effort));
@@ -481,6 +483,7 @@ function ProfileSheet({
         api_key: apiKey,
         rate_per_second: Number(rps) || 0,
         rate_per_minute: Number(rpm) || 0,
+        max_concurrent: Math.max(0, Math.floor(Number(maxConc) || 0)),
         context_window_k: Number(cw) || 0,
         thinking_type: toStore(thinkingType),
         reasoning_effort: toStore(effort),
@@ -768,6 +771,26 @@ function ProfileSheet({
               "Rate limits of 0 mean unlimited, shared across all agents. The context window is in K (thousand tokens); 0 = the 200K default, capped at 1000 (i.e. 1M). Setting it too high keeps compression from ever triggering.",
             )}
           </p>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2">
+              <Label htmlFor="p-maxconc">{t("Max concurrent requests")}</Label>
+              <Input
+                id="p-maxconc"
+                type="number"
+                min={0}
+                max={256}
+                value={maxConc}
+                onChange={(e) => setMaxConc(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <p className="self-end text-muted-foreground text-xs sm:col-span-2">
+              {t(
+                "How many requests may run on this profile at the same time, across all tasks and agents. Extra requests wait in a queue. 0 = unlimited. For a local GPU (e.g. Ollama), 1 or 2 keeps it from being overloaded.",
+              )}
+            </p>
+          </div>
 
           <div className="grid gap-3 rounded-lg border p-3">
             <div className="flex items-center justify-between gap-4">
@@ -1075,6 +1098,9 @@ export default function LLMPage() {
                       <span>
                         {t("{rps}/s · {rpm}/min", { rps: p.rate_per_second, rpm: p.rate_per_minute })}
                       </span>
+                      {(p.max_concurrent ?? 0) > 0 && (
+                        <span>{t("Max {count} at once", { count: p.max_concurrent ?? 0 })}</span>
+                      )}
                       {p.proxy && <span className="truncate">{t("Proxy {proxy}", { proxy: p.proxy })}</span>}
                       {p.reasoning_effort && (
                         <span>

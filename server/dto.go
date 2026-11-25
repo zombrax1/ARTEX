@@ -646,6 +646,9 @@ type LLMProfileDTO struct {
 	// User-Agent header with this value. '' = do not override (keep the default UA).
 	UserAgent        string `json:"user_agent"`
 	CustomHeadersSet bool   `json:"custom_headers_set"`
+	// Max requests in flight to this profile at once; 0 = unlimited. Extra
+	// requests queue inside ARTEX (see llmgate).
+	MaxConcurrent int `json:"max_concurrent"`
 	// This profile's retry overrides (connect / empty response / same-provider safe
 	// window). Per item attempts: 0=inherit the global policy | -1=disable that retry
 	// layer | >0=count; interval_ms: 0=default exponential backoff | >0=use that fixed millisecond interval. All zero = fully follow the global policy, i.e. the historical behavior.
@@ -676,6 +679,7 @@ func llmProfileDTO(p *db.LLMProfile) LLMProfileDTO {
 		SessionHeaderKey: p.SessionHeaderKey,
 		UserAgent:        p.UserAgent,
 		CustomHeadersSet: p.CustomHeaders != "",
+		MaxConcurrent:    p.MaxConcurrent,
 		Retry:            p.Retry,
 	}
 }

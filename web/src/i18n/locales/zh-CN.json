@@ -2724,5 +2724,8 @@
   "Search company…": "搜索企业…",
   "Failed to load companies": "加载企业失败",
   "No company found": "未找到企业",
-  "Manage companies": "管理企业"
+  "Manage companies": "管理企业",
+  "Max concurrent requests": "最大并发请求数",
+  "How many requests may run on this profile at the same time, across all tasks and agents. Extra requests wait in a queue. 0 = unlimited. For a local GPU (e.g. Ollama), 1 or 2 keeps it from being overloaded.": "该配置在所有任务和智能体之间同时运行的请求数上限，超出的请求将排队等待。0 = 不限制。本地 GPU（如 Ollama）建议设为 1 或 2，避免过载。",
+  "Max {count} at once": "最多同时 {count} 个"
 }
