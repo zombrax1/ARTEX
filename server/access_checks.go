@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -42,10 +43,36 @@ type accessAccount struct {
 	headers [][2]string
 }
 
+// credentialHost is the host a credential's domain names, lower-case, without
+// a scheme, port or path ("https://App.example.com:8443/x" -> "app.example.com").
+func credentialHost(domain string) string {
+	d := strings.ToLower(strings.TrimSpace(domain))
+	if i := strings.Index(d, "://"); i >= 0 {
+		d = d[i+3:]
+	}
+	if i := strings.IndexAny(d, "/?#"); i >= 0 {
+		d = d[:i]
+	}
+	if h, _, err := net.SplitHostPort(d); err == nil {
+		d = h
+	}
+	return strings.Trim(strings.TrimPrefix(d, "*."), "[].")
+}
+
+// credentialCovers reports whether a credential for domain may be sent to host:
+// the same host, or a subdomain of the credential's domain (a session for
+// example.com is sent to api.example.com, not the other way round).
+func credentialCovers(domain, host string) bool {
+	d, h := credentialHost(domain), strings.ToLower(strings.Trim(host, "[]."))
+	return d != "" && (h == d || strings.HasSuffix(h, "."+d))
+}
+
 // selectAccessAccounts picks the credentials to replay as. Without ids, every
-// account with session headers takes part. A named account without session
-// headers is an error: replaying it would only repeat the anonymous request.
-func selectAccessAccounts(creds []db.TaskCredential, ids []int64, owner int64) ([]accessAccount, error) {
+// account with session headers whose domain covers the destination host takes
+// part. A named account for another domain, or without session headers, is an
+// error: its session must not be sent to another site, and replaying it
+// without one would only repeat the anonymous request.
+func selectAccessAccounts(creds []db.TaskCredential, ids []int64, owner int64, host string) ([]accessAccount, error) {
 	byID := make(map[int64]int, len(creds))
 	for i, c := range creds {
 		byID[c.ID] = i
@@ -53,7 +80,7 @@ func selectAccessAccounts(creds []db.TaskCredential, ids []int64, owner int64) (
 	want := ids
 	if len(want) == 0 {
 		for _, c := range creds {
-			if c.AuthHeaders != "" {
+			if c.AuthHeaders != "" && credentialCovers(c.Domain, host) {
 				want = append(want, c.ID)
 			}
 		}
@@ -82,6 +109,9 @@ func selectAccessAccounts(creds []db.TaskCredential, ids []int64, owner int64) (
 			return nil, fmt.Errorf("credential %d is not a test account of this task", id)
 		}
 		c := creds[i]
+		if !credentialCovers(c.Domain, host) {
+			return nil, fmt.Errorf("credential %d (%s) belongs to %s, not %s; its session is not sent to another host", id, c.Username, c.Domain, host)
+		}
 		if c.AuthHeaders == "" {
 			return nil, fmt.Errorf("credential %d (%s) has no session headers saved; log in as it and save them with save_task_credential auth_headers", id, c.Username)
 		}
@@ -121,7 +151,7 @@ func (s *Server) runAccessCheck(ctx context.Context, toolName string, taskID int
 	if err != nil {
 		return db.AccessCheck{}, err
 	}
-	accounts, err := selectAccessAccounts(creds, req.Accounts, req.Owner)
+	accounts, err := selectAccessAccounts(creds, req.Accounts, req.Owner, u.Hostname())
 	if err != nil {
 		return db.AccessCheck{}, err
 	}
@@ -205,7 +235,14 @@ func (s *Server) replayAs(ctx context.Context, toolName, method, rawURL string, 
 		return res
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxAccessBody))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxAccessBody))
+	if err != nil {
+		// A truncated or stalled body is not evidence: keep the status, mark
+		// the result failed so the comparison skips it.
+		res.Status, res.Length = resp.StatusCode, len(data)
+		res.Error = "reading the response body failed: " + err.Error()
+		return res
+	}
 	sum := sha256.Sum256(data)
 	res.Status, res.Length, res.BodyHash = resp.StatusCode, len(data), hex.EncodeToString(sum[:])
 	snippet := data
