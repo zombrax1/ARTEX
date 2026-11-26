@@ -27,14 +27,25 @@ func TestRepeatGuardRefusesIdenticalFailures(t *testing.T) {
 		}
 		h.PostToolUse(ctx, "Bash", bashIn(cmd), errResult("curl: (7) Failed to connect\n\n[exit code 7]"), true)
 	}
-	// whitespace and description changes are still the same call
-	block, msg, _ := h.PreToolUse(ctx, "Bash", []byte(`{"command":"curl  -s http://t.example/api","description":"retry"}`))
+	// key order, JSON formatting and description changes are still the same call
+	block, msg, _ := h.PreToolUse(ctx, "Bash", []byte(`{ "description":"retry", "command":"curl -s http://t.example/api" }`))
 	if !block || !strings.Contains(msg, "Failed to connect") || !strings.Contains(msg, "failed 2 times") {
 		t.Fatalf("third identical failing call: block=%v msg=%q", block, msg)
 	}
 	// a different command still runs
 	if block, _, _ := h.PreToolUse(ctx, "Bash", bashIn("curl -s http://t.example/other")); block {
 		t.Fatal("a different call was refused")
+	}
+	// whitespace inside a value is significant (an edit's indentation, a quoted argument)
+	edit := func(old string) []byte {
+		b, _ := json.Marshal(map[string]any{"file_path": "/x", "old_string": old, "new_string": "y"})
+		return b
+	}
+	for i := 0; i < 2; i++ {
+		h.PostToolUse(ctx, "Edit", edit("  foo"), errResult("old_string not found"), true)
+	}
+	if block, _, _ := h.PreToolUse(ctx, "Edit", edit("    foo")); block {
+		t.Fatal("an edit differing only in indentation was refused")
 	}
 }
 
@@ -59,6 +70,15 @@ func TestRepeatGuardIdenticalSuccesses(t *testing.T) {
 	}
 	if block, msg, _ := h.PreToolUse(ctx, "Bash", in); !block || !strings.Contains(msg, "Identical repeat") {
 		t.Fatalf("4th identical successful call: block=%v msg=%q", block, msg)
+	}
+	// a failure in between restarts the count of consecutive successes
+	h3 := repeatGuardWith(nil, RepeatGuardLimits{Enabled: true, IdenticalRepeats: 2})
+	h3.PostToolUse(ctx, "Bash", in, errResult("a"), false)
+	h3.PostToolUse(ctx, "Bash", in, errResult("a"), false)
+	h3.PostToolUse(ctx, "Bash", in, errResult("flaky"), true)
+	h3.PostToolUse(ctx, "Bash", in, errResult("a"), false)
+	if block, _, _ := h3.PreToolUse(ctx, "Bash", in); block {
+		t.Fatal("successes before a failure were counted as consecutive")
 	}
 	// interleaving another call breaks the run of identical calls
 	h2 := repeatGuardWith(nil, RepeatGuardLimits{Enabled: true, IdenticalRepeats: 2})

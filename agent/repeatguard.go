@@ -95,19 +95,17 @@ func repeatExempt(tool string) bool {
 	return !BudgetWrapupBlocks(tool)
 }
 
-// repeatCallKey normalizes a tool call so cosmetic differences (key order,
-// whitespace, the free-text description) do not hide a repeat.
+// repeatCallKey normalizes a tool call so cosmetic differences (key order, JSON
+// formatting, the free-text description) do not hide a repeat.
 func repeatCallKey(tool string, input []byte) string {
 	var m map[string]any
 	if json.Unmarshal(input, &m) != nil {
-		return tool + "\x00" + strings.Join(strings.Fields(string(input)), " ")
+		return tool + "\x00" + string(input)
 	}
 	delete(m, "description")
-	for k, v := range m {
-		if s, ok := v.(string); ok {
-			m[k] = strings.Join(strings.Fields(s), " ")
-		}
-	}
+	// String values are kept byte for byte: whitespace can be significant (an edit's
+	// old_string indentation, a quoted shell argument), so a call that differs only
+	// in whitespace is a different call.
 	b, _ := json.Marshal(m) // map keys marshal sorted
 	return tool + "\x00" + string(b)
 }
@@ -285,6 +283,7 @@ func (h repeatGuardHooks) record(name string, input, result []byte, isErr bool) 
 		st.calls[key] = c
 	}
 	if isErr {
+		c.successes = 0 // the identical-success count covers consecutive successes only
 		c.failures++
 		c.lastError = failureSummary(result)
 		st.streak++
