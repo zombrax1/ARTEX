@@ -255,3 +255,42 @@ func TestParsePostmanCollectionNoAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestParseAllOfDuplicateRequired(t *testing.T) {
+	doc := `{"openapi":"3.0.0","info":{"title":"s"},"paths":{"/a":{"post":{"requestBody":{"content":{"application/json":{"schema":{
+	  "allOf":[{"properties":{"email":{"type":"string"}},"required":["email"]},{"properties":{"email":{"type":"string","format":"email"}}}]}}}}}}}}`
+	def, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := def.Operations[0].Params
+	if len(ps) != 1 || !ps[0].Required || ps[0].Type != "string(email)" {
+		t.Fatalf("params = %+v", ps)
+	}
+}
+
+func TestParsePostmanNullAuthInherits(t *testing.T) {
+	doc := `{"info":{"name":"c","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+	  "auth":{"type":"bearer"},
+	  "item":[{"name":"f","auth":null,"item":[{"name":"a","request":{"method":"GET","url":"https://example.com/a","auth":null}}]},
+	    {"name":"b","request":{"method":"GET","url":"https://example.com/b","auth":{"type":"noauth"}}}]}`
+	def, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(def.Operations) != 2 {
+		t.Fatalf("operations = %+v", def.Operations)
+	}
+	for _, op := range def.Operations {
+		if want := op.Path == "/a"; op.Auth != want {
+			t.Errorf("%s auth = %v, want %v", op.Path, op.Auth, want)
+		}
+	}
+}
+
+func TestMatcherEscapedBasePath(t *testing.T) {
+	m := NewMatcher(Operation{Method: "GET", Path: "/users", BaseURL: "https://example.com/api%20v1"})
+	if !m.Match("GET", "example.com", "/api%20v1/users") {
+		t.Error("the escaped base path does not match the captured escaped path")
+	}
+}

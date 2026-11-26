@@ -323,10 +323,24 @@ func (p *oaParser) mergeOwnParams(out []Param, schema, props map[string]any, in 
 	for _, r := range arr(schema["required"]) {
 		req[str(r)] = true
 	}
+	// allOf branches may describe the same property: every constraint
+	// applies, so one entry stays, required if any branch requires it.
 	seen := map[string]int{}
-	for i, prm := range out {
-		seen[prm.Name] = i
-		if req[prm.Name] {
+	merged := out[:0:0]
+	for _, prm := range out {
+		if i, ok := seen[prm.Name]; ok {
+			merged[i].Required = merged[i].Required || prm.Required
+			if prm.Type != "" {
+				merged[i].Type = prm.Type
+			}
+			continue
+		}
+		seen[prm.Name] = len(merged)
+		merged = append(merged, prm)
+	}
+	out = merged
+	for i := range out {
+		if req[out[i].Name] {
 			out[i].Required = true
 		}
 	}
@@ -339,6 +353,9 @@ func (p *oaParser) mergeOwnParams(out []Param, schema, props map[string]any, in 
 		prm := Param{Name: k, In: in, Required: req[k], Type: p.schemaTypeAt(obj(props[k]), depth+1)}
 		if i, ok := seen[k]; ok {
 			prm.Required = prm.Required || out[i].Required
+			if prm.Type == "" {
+				prm.Type = out[i].Type
+			}
 			out[i] = prm
 			continue
 		}
@@ -579,8 +596,9 @@ func parsePostman(doc map[string]any) (*Definition, error) {
 				continue
 			}
 			auth := inheritedAuth
-			if a, ok := it["auth"]; ok {
-				auth = a != nil && str(obj(a)["type"]) != "noauth"
+			// "auth": null inherits; only a set auth overrides.
+			if a, ok := it["auth"]; ok && a != nil {
+				auth = str(obj(a)["type"]) != "noauth"
 			}
 			if sub := arr(it["item"]); sub != nil {
 				walk(sub, auth)
@@ -594,8 +612,9 @@ func parsePostman(doc map[string]any) (*Definition, error) {
 					continue
 				}
 			}
-			if a, ok := req["auth"]; ok {
-				auth = a != nil && str(obj(a)["type"]) != "noauth"
+			// "auth": null inherits; only a set auth overrides.
+			if a, ok := req["auth"]; ok && a != nil {
+				auth = str(obj(a)["type"]) != "noauth"
 			}
 			op := postmanOperation(req, expand)
 			if op == nil {
@@ -799,7 +818,9 @@ func NewMatcher(op Operation) Matcher {
 	host, basePath := "", ""
 	if u, err := url.Parse(op.BaseURL); err == nil {
 		host = strings.ToLower(u.Host)
-		basePath = strings.TrimRight(u.Path, "/")
+		// Captured requests are matched on their escaped path: keep the
+		// base path in the same form.
+		basePath = strings.TrimRight(u.EscapedPath(), "/")
 	} else if strings.HasPrefix(op.BaseURL, "/") {
 		basePath = strings.TrimRight(op.BaseURL, "/")
 	}
