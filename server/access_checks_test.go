@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -26,6 +27,12 @@ func TestCompareAccessFlagsCrossOrgResponse(t *testing.T) {
 	// alice owns order 1; bob (another organisation) also gets it: the bug.
 	var sawAnonCookie bool
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/huge" {
+			// Same prefix for everyone, then a per-session tail past the cap.
+			_, _ = w.Write(bytes.Repeat([]byte("a"), maxAccessBody))
+			_, _ = w.Write([]byte("|" + r.Header.Get("Cookie")))
+			return
+		}
 		if r.URL.Path == "/truncated" {
 			w.Header().Set("Content-Length", "100")
 			_, _ = w.Write([]byte(`{"order":1`))
@@ -108,6 +115,20 @@ func TestCompareAccessFlagsCrossOrgResponse(t *testing.T) {
 		t.Fatalf("flags on truncated bodies: %+v", tc.Flags)
 	}
 
+	// A body past the cap is recorded as an error and never compared.
+	tc, err = s.runAccessCheck(ctx, "compare_access", tid, agent.AccessCheckRequest{URL: target.URL + "/huge", Owner: alice})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range tc.Results {
+		if r.Error == "" || r.BodyHash != "" {
+			t.Fatalf("oversized body compared: %+v", r)
+		}
+	}
+	if len(tc.Flags) != 0 {
+		t.Fatalf("flags on oversized bodies: %+v", tc.Flags)
+	}
+
 	// A named account without session headers is refused, not silently anonymous.
 	if _, err := s.runAccessCheck(ctx, "compare_access", tid, agent.AccessCheckRequest{URL: target.URL + "/orders/1", Accounts: []int64{alice, alice + 3}}); err == nil || !strings.Contains(err.Error(), "no session headers") {
 		t.Fatalf("account without headers: %v", err)
@@ -115,7 +136,7 @@ func TestCompareAccessFlagsCrossOrgResponse(t *testing.T) {
 
 	w := request("GET", "/api/tasks/"+taskID+"/access-checks", "")
 	var list []db.AccessCheck
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &list) != nil || len(list) != 2 || len(list[1].Flags) != 1 {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &list) != nil || len(list) != 3 || len(list[2].Flags) != 1 {
 		t.Fatalf("list: %d %s", w.Code, w.Body.String())
 	}
 

@@ -28,7 +28,7 @@ import (
 
 const (
 	maxAccessAccounts   = 12
-	maxAccessBody       = 2 << 20
+	maxAccessBody       = 16 << 20
 	accessSnippetLength = 240
 	accessTimeout       = 20 * time.Second
 )
@@ -240,25 +240,44 @@ func (s *Server) replayAs(ctx context.Context, toolName, method, rawURL string, 
 		return res
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxAccessBody))
+	// Hash and count the whole body, up to the cap, while keeping only the
+	// snippet in memory. A body past the cap is not compared: two capped
+	// prefixes would look alike whatever followed them.
+	hash := sha256.New()
+	snip := &snippetBuffer{max: accessSnippetLength}
+	n, err := io.Copy(io.MultiWriter(hash, snip), io.LimitReader(resp.Body, maxAccessBody+1))
 	if err != nil {
 		// A truncated or stalled body is not evidence: keep the status, mark
 		// the result failed so the comparison skips it.
-		res.Status, res.Length = resp.StatusCode, len(data)
+		res.Status, res.Length = resp.StatusCode, int(n)
 		res.Error = "reading the response body failed: " + err.Error()
 		return res
 	}
-	sum := sha256.Sum256(data)
-	res.Status, res.Length, res.BodyHash = resp.StatusCode, len(data), hex.EncodeToString(sum[:])
-	snippet := data
-	if len(snippet) > accessSnippetLength {
-		snippet = snippet[:accessSnippetLength]
+	if n > maxAccessBody {
+		res.Status, res.Length = resp.StatusCode, int(n)
+		res.Error = fmt.Sprintf("the response is larger than %d MiB and was not compared", maxAccessBody>>20)
+		return res
 	}
+	res.Status, res.Length, res.BodyHash = resp.StatusCode, int(n), hex.EncodeToString(hash.Sum(nil))
+	snippet := snip.buf
 	res.Snippet = strings.ToValidUTF8(string(snippet), "")
 	if loc := resp.Header.Get("Location"); loc != "" && resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		res.Snippet = "→ " + loc
 	}
 	return res
+}
+
+// snippetBuffer keeps the first max bytes written to it and drops the rest.
+type snippetBuffer struct {
+	buf []byte
+	max int
+}
+
+func (b *snippetBuffer) Write(p []byte) (int, error) {
+	if room := b.max - len(b.buf); room > 0 {
+		b.buf = append(b.buf, p[:min(room, len(p))]...)
+	}
+	return len(p), nil
 }
 
 // GET /api/tasks/{id}/access-checks
