@@ -138,3 +138,25 @@ func TestReadinessMissingRequiredReportField(t *testing.T) {
 		t.Fatalf("problems = %q", p)
 	}
 }
+
+func TestReadinessTaskNeedsHTTPFetch(t *testing.T) {
+	r := runScripted(t, []scriptedReply{
+		{tool: "record_port", args: `{"host":"192.0.2.10","port":8443,"protocol":"tcp","state":"open"}`},
+		{text: "DONE"},
+		// names the host but runs no HTTP request, then reports anyway
+		{tool: "run_command", args: `{"command":"192.0.2.20"}`},
+		{tool: "report_observation", args: `{"title":"Apache/2.4.49","severity":"low","evidence":"Server: Apache/2.4.49 (Unix)"}`},
+		{text: "Done."},
+	})
+	if r.Verdict == ReadinessReady {
+		t.Fatalf("verdict %s without an HTTP fetch: %+v", r.Verdict, r.Checks)
+	}
+	if p := strings.Join(r.Checks[1].Problems, " "); !strings.Contains(p, "did not fetch") {
+		t.Fatalf("problems = %q", p)
+	}
+	for _, cmd := range []string{"curl -sI http://192.0.2.20/", "wget -S -O- 192.0.2.20", "http HEAD 192.0.2.20"} {
+		if !headerFetch(json.RawMessage(`{"command":"` + cmd + `"}`)) {
+			t.Errorf("%q is a fetch", cmd)
+		}
+	}
+}

@@ -212,12 +212,36 @@ func checkToolCall(ctx context.Context, prov llm.Provider, c Config) ReadinessCh
 
 const readinessHTTPResponse = "HTTP/1.1 200 OK\nDate: Tue, 05 Oct 2021 10:00:00 GMT\nServer: Apache/2.4.49 (Unix)\nContent-Type: text/html\nContent-Length: 45\n\n<html><body><h1>It works!</h1></body></html>"
 
+// headerFetch reports whether a run_command input is an HTTP request to the
+// test host: an HTTP client (curl, wget, httpie, ...) or an http:// URL with
+// the host. A bare host name or an unrelated command is not a fetch.
+func headerFetch(raw json.RawMessage) bool {
+	var in struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal(raw, &in) != nil || !strings.Contains(in.Command, "192.0.2.20") {
+		return false
+	}
+	cmd := strings.ToLower(in.Command)
+	for _, client := range []string{"curl", "wget", "http ", "https ", "httpie", "invoke-webrequest", "iwr ", "nc ", "ncat", "openssl s_client", "python", "http://192.0.2.20"} {
+		if strings.Contains(cmd, client) {
+			return true
+		}
+	}
+	return false
+}
+
 func checkTask(ctx context.Context, prov llm.Provider, c Config) ReadinessCheck {
 	ch := ReadinessCheck{ID: "task"}
 	log := &callLog{}
 	run := readinessTool(log, "run_command", "Run a shell command and return its output.",
 		obj(map[string]any{"command": str("the command line to run")}, "command"),
-		func(json.RawMessage) string { return readinessHTTPResponse })
+		func(in json.RawMessage) string {
+			if headerFetch(in) {
+				return readinessHTTPResponse
+			}
+			return "error: this sandbox only runs an HTTP request to http://192.0.2.20/ (for example curl -sI http://192.0.2.20/)"
+		})
 	report := readinessTool(log, "report_observation", "Report one security-relevant observation.",
 		obj(map[string]any{
 			"title":    str("short title"),
@@ -238,10 +262,7 @@ func checkTask(ctx context.Context, prov llm.Provider, c Config) ReadinessCheck 
 	for i, call := range calls {
 		switch call.name {
 		case "run_command":
-			var in struct {
-				Command string `json:"command"`
-			}
-			if json.Unmarshal(call.input, &in) == nil && strings.Contains(in.Command, "192.0.2.20") && ranAt < 0 {
+			if headerFetch(call.input) && ranAt < 0 {
 				ranAt = i
 			}
 		case "report_observation":

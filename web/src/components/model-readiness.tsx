@@ -104,6 +104,13 @@ export function ReadinessDialog({
   const [running, setRunning] = React.useState(false);
   const [current, setCurrent] = React.useState<ReadinessReport | undefined>(report);
   const [advertised, setAdvertised] = React.useState<Advertised>({ state: "loading" });
+  // The profile the dialog shows now: a test still running for another
+  // profile must not write its result here when it finishes.
+  const shownID = React.useRef(profile?.id);
+  shownID.current = profile?.id;
+  // A test still running for the previous profile does not block this one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on a profile change only
+  React.useEffect(() => setRunning(false), [profile?.id]);
 
   React.useEffect(() => {
     if (open) setCurrent(report);
@@ -131,19 +138,23 @@ export function ReadinessDialog({
 
   const run = () => {
     if (!profile) return;
+    const testedID = profile.id;
     setRunning(true);
     api
-      .runLLMReadiness(profile.id)
+      .runLLMReadiness(testedID)
       .then((r) => {
         if (!r.ok || !r.report) {
           toast.error(t("Readiness test failed: {error}", { error: r.error ?? "?" }));
           return;
         }
-        setCurrent(r.report);
+        // Saved server-side either way; onTested reloads every profile's result.
+        if (shownID.current === testedID) setCurrent(r.report);
         onTested();
       })
       .catch((e) => toast.error(t("Readiness test failed: {error}", { error: (e as Error).message })))
-      .finally(() => setRunning(false));
+      .finally(() => {
+        if (shownID.current === testedID) setRunning(false);
+      });
   };
 
   return (
