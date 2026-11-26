@@ -16,7 +16,9 @@ import { api } from "@/lib/api";
 import { CHAT_SEND_MODE_OPTIONS, type ChatSendMode, setChatSendMode, useChatSendMode } from "@/lib/chat-send-mode";
 import type { Settings } from "@/lib/types";
 
+import { McpServerCard } from "./mcp-server-card";
 import { NoiseProfileCard } from "./noise-profile-card";
+import { RepeatGuardCard } from "./repeat-guard-card";
 
 // Renders a translated string, turning <b>…</b> and <code>…</code> spans into elements, so a sentence with emphasis stays one key.
 function rich(s: string): React.ReactNode[] {
@@ -341,6 +343,9 @@ export default function SystemSettingsPage() {
         </Card>
 
         <NoiseProfileCard />
+
+        <RepeatGuardCard />
+        <McpServerCard />
 
         <Card className="mb-4 break-inside-avoid md:mb-6">
           <CardHeader>

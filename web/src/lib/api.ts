@@ -62,6 +62,7 @@ import type {
   JudgeUsage,
   LLMPoolStatus,
   LLMQueueStatus,
+  SystemMetrics,
   OllamaModelInfo,
   LLMProfile,
   LLMRecordDetail,
@@ -1021,6 +1022,15 @@ export const api = {
   settings: () => get<Settings>(`/settings`),
   setSettings: (patch: Partial<Settings>) => put<Settings>(`/settings`, patch),
   noiseStatus: () => get<import("@/lib/types").NoiseStatus>(`/settings/noise`),
+  // ARTEX's own MCP server endpoint (/mcp): switch, access tokens and the call log.
+  mcpServer: () => get<import("@/lib/types").MCPServerSettings>("/mcp-server"),
+  setMCPServerEnabled: (enabled: boolean) => put<import("@/lib/types").MCPServerSettings>("/mcp-server", { enabled }),
+  createMCPServerToken: (body: { name: string; scopes: string[]; expires_in_days: number }) =>
+    post<{ token: string; item: import("@/lib/types").MCPServerToken }>("/mcp-server/tokens", body),
+  revokeMCPServerToken: (id: number) => post<{ ok: boolean }>(`/mcp-server/tokens/${id}/revoke`),
+  deleteMCPServerToken: (id: number) => del<{ ok: boolean }>(`/mcp-server/tokens/${id}`),
+  mcpServerAudit: (limit = 20) =>
+    get<{ entries: import("@/lib/types").MCPServerAuditEntry[] }>(`/mcp-server/audit?limit=${limit}`),
   // Run a real "test" search with the given (or saved) config to verify it works.
   testWebSearch: (patch: {
     web_search_backend?: string;
@@ -1203,6 +1213,8 @@ export const api = {
   // The pool chain's actual order + each profile's breaker state.
   llmPool: () => get<LLMPoolStatus>("/llm/pool"),
   llmQueue: () => get<LLMQueueStatus>("/llm/queue"),
+  // CPU, memory, data disk and GPU memory of the machine running ARTEX.
+  systemMetrics: () => get<SystemMetrics>("/system/metrics"),
   // Clear the breaker so the next call retries this profile immediately; no id = clear all.
   resetLLMPool: (id?: string) => post<LLMPoolStatus>("/llm/pool/reset", { id: id ? Number(id) : 0 }),
   // Global retry policy (count + interval for each of the five layers). All zeros = built-in defaults everywhere.
