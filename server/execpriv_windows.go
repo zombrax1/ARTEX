@@ -5,6 +5,7 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -96,6 +97,11 @@ var readOnlyDirACEs = []fileACE{
 // by the agent account, nor their permissions changed.
 var denyWriteACEs = []fileACE{
 	{windows.DENY_ACCESS, aclDenyWrite, windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT},
+}
+
+// Directories whose new files are secret: every file below denies the account.
+var denyFilesACEs = []fileACE{
+	{windows.DENY_ACCESS, aclDenyAll, windows.OBJECT_INHERIT_ACE | windows.INHERIT_ONLY},
 }
 
 // Secret files: no access at all.
@@ -317,6 +323,15 @@ func PrepareExecPrivilege(p *ExecPrivilege, dataDir, keyDir, configPath string) 
 	for _, f := range []string{filepath.Join(keyDir, "jwt.key"), filepath.Join(keyDir, "secret.key"), configPath, p.cred} {
 		tryACEs(f, sid, denyAllACEs)
 	}
+	// The keys may not exist yet: NewManager and server.New create them after this,
+	// and Windows ignores their 0600 mode. Every file created below the key and
+	// config directories denies the account by inheritance; what it must read there
+	// (run, spill, script and shim directories, the skills, the CA certificate) is
+	// granted closer to the file, which takes precedence. The self-test checks a
+	// freshly created file (secretCanaries).
+	for _, dir := range []string{keyDir, configDir(configPath)} {
+		tryACEs(dir, sid, denyFilesACEs)
+	}
 	// The MITM CA: the certificate is read by the agents' tools, the key is not.
 	caDir := filepath.Join(dataDir, "traffic", "_ca")
 	if err := os.MkdirAll(caDir, 0o755); err != nil {
@@ -404,9 +419,42 @@ func RunExecShimIfRequested(argv []string) {
 	if len(argv) >= 2 && argv[1] == execDropArg {
 		runDropShim(argv[2:])
 	}
+	if len(argv) >= 2 && argv[1] == execChildArg {
+		runExecChild()
+	}
 	if len(argv) >= 2 && argv[1] == isolationProbeArg {
 		runIsolationProbeMain(argv[2:])
 	}
+}
+
+// execChildArg is the argv marker of the launcher: the process the shim starts as
+// the agent account, which starts the real command from envExecLaunch.
+const execChildArg = "__artex-exec-child"
+
+// envExecLaunch carries the real command from the shim to the launcher.
+const envExecLaunch = "ARTEX_EXEC_LAUNCH"
+
+// createProcessWithLogonMaxCmdLine is the documented command-line limit of
+// CreateProcessWithLogonW.
+const createProcessWithLogonMaxCmdLine = 1024
+
+type execLaunch struct {
+	App  string   `json:"app"`
+	Args []string `json:"args"`
+}
+
+// runExecChild is the launcher, already the agent account and in the job: it takes
+// the command out of its environment, so the command does not see it, and runs it
+// with the standard handles, exiting with its exit code.
+func runExecChild() {
+	var l execLaunch
+	if err := json.Unmarshal([]byte(os.Getenv(envExecLaunch)), &l); err != nil || l.App == "" {
+		shimFail(fmt.Errorf("launcher: no command in %s: %v", envExecLaunch, err))
+	}
+	if err := os.Unsetenv(envExecLaunch); err != nil {
+		shimFail(err)
+	}
+	os.Exit(runDirect(l.App, l.Args))
 }
 
 // runDropShim runs "<uid> <gid> -- <command> <args...>" as the agent account. The
@@ -464,11 +512,20 @@ func shimRun(app string, args []string, lookup bool) int {
 			shimFail(err)
 		}
 	}
+	// CreateProcessWithLogonW takes at most 1,024 characters of command line, far
+	// less than an agent command. The account starts the launcher copy in binDir with
+	// a short command line instead, and the launcher reads the real command from its
+	// environment (no length limit short of the 32K of a Windows command line).
+	launch, err := json.Marshal(execLaunch{App: app, Args: args})
+	if err != nil {
+		shimFail(err)
+	}
+	env = append(env, envExecLaunch+"="+string(launch))
 	block, err := envListToBlock(env)
 	if err != nil {
 		shimFail(err)
 	}
-	code, err := startAsAccount(cred, self, sidStr, app, args, block)
+	code, err := startAsAccount(cred, self, sidStr, filepath.Join(binDir, execProbeExe), []string{execChildArg}, block)
 	if err != nil {
 		shimFail(err)
 	}
@@ -552,6 +609,9 @@ func startAsAccount(cred execCred, serverSID, agentSID, app string, args []strin
 		return 0, err
 	}
 	cmdLine := windows.ComposeCommandLine(append([]string{app}, args...))
+	if n := len(windows.StringToUTF16(cmdLine)) - 1; n > createProcessWithLogonMaxCmdLine {
+		return 0, fmt.Errorf("the launcher command line is %d characters, more than the %d CreateProcessWithLogonW takes: move ARTEX's data directory to a shorter path", n, createProcessWithLogonMaxCmdLine)
+	}
 	var pi windows.ProcessInformation
 	if err := createProcessWithLogon(cred.Account, cred.Password, app, cmdLine,
 		windows.CREATE_SUSPENDED|windows.CREATE_UNICODE_ENVIRONMENT, env, cwd, &si, &pi); err != nil {

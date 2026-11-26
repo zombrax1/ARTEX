@@ -199,6 +199,26 @@ func TestWindowsAgentAccountIsolation(t *testing.T) {
 				t.Errorf("the shell read jwt.key: %v\n%s", err, out)
 			}
 
+			// A key created after the start (a fresh install creates them after the
+			// self-test) is denied by inheritance.
+			late := filepath.Join(f.keyDir, "late.key")
+			if err := os.WriteFile(late, []byte("late-secret"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "Get-Content -LiteralPath "+psQuote(late))
+			c.Dir = run
+			if out, err := c.CombinedOutput(); err == nil || strings.Contains(string(out), "late-secret") {
+				t.Errorf("the shell read a key created after the start: %v\n%s", err, out)
+			}
+
+			// An agent command far longer than CreateProcessWithLogonW's 1,024 characters.
+			long := "$x = '" + strings.Repeat("a", 5000) + "'; 'len=' + $x.Length"
+			c = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", long)
+			c.Dir = run
+			if out, err := c.CombinedOutput(); err != nil || !strings.Contains(string(out), "len=5000") {
+				t.Errorf("long command: %v\n%s", err, out)
+			}
+
 			// An MCP stdio server or a custom tool: the drop shim.
 			name, args, err := execDropCommand(f.priv, "cmd.exe", []string{"/d", "/c", "whoami"})
 			if err != nil {

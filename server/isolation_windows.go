@@ -58,6 +58,16 @@ func IsolationSelfTest(p ExecPrivilege, t IsolationTargets) error {
 	if err != nil {
 		return err
 	}
+	canaries, err := secretCanaries(t)
+	defer func() {
+		for _, c := range canaries {
+			os.Remove(c)
+		}
+	}()
+	if err != nil {
+		return err
+	}
+	spec.Unreadable = append(spec.Unreadable, canaries...)
 	failures := fileToolIsolationFailures(spec.Unreadable)
 	if t.DSN != "" && len(spec.DB) == 0 {
 		failures = append(failures, "the database DSN names no host the self-test can check")
@@ -125,6 +135,29 @@ func winIsolationSpec(p ExecPrivilege, t IsolationTargets) (winProbeSpec, error)
 		}
 	}
 	return spec, nil
+}
+
+// secretCanaries creates a new file in the key directory and in the config
+// directory, as the keys are created after the self-test on a fresh install: the
+// probe must not be able to read them either.
+func secretCanaries(t IsolationTargets) ([]string, error) {
+	var out []string
+	for _, dir := range []string{t.KeyDir, configDir(t.ConfigPath)} {
+		if dir == "" {
+			continue
+		}
+		if _, err := os.Stat(dir); err != nil {
+			continue
+		}
+		f, err := os.CreateTemp(dir, ".artex-isolation-canary-*")
+		if err != nil {
+			return out, fmt.Errorf("create the self-test canary in %s: %w", dir, err)
+		}
+		f.WriteString("canary")
+		f.Close()
+		out = append(out, f.Name())
+	}
+	return out, nil
 }
 
 // psQuote quotes s as a PowerShell single-quoted string.
