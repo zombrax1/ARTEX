@@ -169,6 +169,43 @@ func arr(v any) []any          { a, _ := v.([]any); return a }
 type oaParser struct {
 	root    map[string]any
 	swagger bool
+	// budget is the schema nodes one top-level traversal may still visit: a
+	// schema whose allOf lists itself several times branches exponentially
+	// within the depth limit.
+	budget int
+	// path holds the $refs on the current traversal path; a reference back
+	// to one of them is a cycle and is not followed again.
+	path map[string]bool
+}
+
+// maxSchemaNodes bounds the work of one top-level schema traversal.
+const maxSchemaNodes = 2000
+
+// enter starts visiting a schema node: false when the work budget is spent
+// or the node's $ref is already on the traversal path. leave undoes it.
+func (p *oaParser) enter(s map[string]any) (ref string, ok bool) {
+	p.budget--
+	if p.budget < 0 {
+		return "", false
+	}
+	ref = str(s["$ref"])
+	if ref == "" {
+		return "", true
+	}
+	if p.path[ref] {
+		return "", false
+	}
+	if p.path == nil {
+		p.path = map[string]bool{}
+	}
+	p.path[ref] = true
+	return ref, true
+}
+
+func (p *oaParser) leave(ref string) {
+	if ref != "" {
+		delete(p.path, ref)
+	}
 }
 
 // resolve follows a local $ref (#/a/b/c) up to a few levels.
@@ -196,9 +233,17 @@ func (p *oaParser) resolve(v map[string]any) map[string]any {
 // $ref afresh.
 const maxSchemaDepth = 8
 
-func (p *oaParser) schemaType(s map[string]any) string { return p.schemaTypeAt(s, 0) }
+func (p *oaParser) schemaType(s map[string]any) string {
+	p.budget, p.path = maxSchemaNodes, nil
+	return p.schemaTypeAt(s, 0)
+}
 
 func (p *oaParser) schemaTypeAt(s map[string]any, depth int) string {
+	ref, ok := p.enter(s)
+	if !ok {
+		return ""
+	}
+	defer p.leave(ref)
 	s = p.resolve(s)
 	if s == nil || depth > maxSchemaDepth {
 		return ""
@@ -222,10 +267,16 @@ func (p *oaParser) schemaTypeAt(s map[string]any, depth int) string {
 
 // bodyParams lists the top-level properties of a request body schema.
 func (p *oaParser) bodyParams(schema map[string]any, in string) []Param {
+	p.budget, p.path = maxSchemaNodes, nil
 	return p.bodyParamsAt(schema, in, 0)
 }
 
 func (p *oaParser) bodyParamsAt(schema map[string]any, in string, depth int) []Param {
+	ref, ok := p.enter(schema)
+	if !ok {
+		return nil
+	}
+	defer p.leave(ref)
 	schema = p.resolve(schema)
 	if schema == nil || depth > maxSchemaDepth {
 		return nil
@@ -242,7 +293,7 @@ func (p *oaParser) bodyParamsAt(schema map[string]any, in string, depth int) []P
 	}
 	props := obj(schema["properties"])
 	if len(props) == 0 {
-		if t := p.schemaType(schema); t != "" {
+		if t := p.schemaTypeAt(schema, depth+1); t != "" {
 			return []Param{{Name: "(body)", In: in, Type: t}}
 		}
 		return nil
@@ -258,7 +309,7 @@ func (p *oaParser) bodyParamsAt(schema map[string]any, in string, depth int) []P
 	sort.Strings(names)
 	out := make([]Param, 0, len(names))
 	for _, k := range names {
-		out = append(out, Param{Name: k, In: in, Required: req[k], Type: p.schemaType(obj(props[k]))})
+		out = append(out, Param{Name: k, In: in, Required: req[k], Type: p.schemaTypeAt(obj(props[k]), depth+1)})
 	}
 	return out
 }

@@ -1,8 +1,10 @@
 package apidef
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 const openapiYAML = `
@@ -172,5 +174,30 @@ func TestParseOperationServers(t *testing.T) {
 		if op.Method == "POST" && op.Path == "/b" && !NewMatcher(op).Match("POST", "example.com", "/v3/b") {
 			t.Error("the operation-level server does not match its own traffic")
 		}
+	}
+}
+
+func TestParseBranchingSelfReference(t *testing.T) {
+	refs := make([]string, 20)
+	for i := range refs {
+		refs[i] = `{"$ref":"#/components/schemas/A"}`
+	}
+	doc := `{"openapi":"3.0.0","info":{"title":"fan"},"paths":{"/a":{"post":{"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}}},
+	  "components":{"schemas":{"A":{"allOf":[` + strings.Join(refs, ",") + `,{"properties":{"x":{"type":"string"}}}]}}}}`
+	done := make(chan error, 1)
+	go func() {
+		def, err := Parse([]byte(doc))
+		if err == nil && (len(def.Operations) != 1 || len(def.Operations[0].Params) != 1) {
+			err = fmt.Errorf("operations = %+v", def.Operations)
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("parsing a schema whose allOf references itself 20 times did not finish")
 	}
 }
