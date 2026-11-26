@@ -69,3 +69,5 @@ func enterFileIdentity(id FileToolIdentity) error {
 	}
 	return nil
 }
+
+const workRootAncestorsAsServer = false

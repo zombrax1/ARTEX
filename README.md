@@ -443,6 +443,10 @@ cp config.example.json config.json   # fill in the database connection
 Start with `start.sh` / `start.bat`, not `./artex`: it is a daemon script that restarts the process
 after a backoff. To keep it in the background: `nohup ./start.sh >artex.log 2>&1 &`.
 
+On Windows, agent shells, custom tools and MCP servers run with your own Windows identity until
+you set up a separate agent account once, from an elevated prompt: `artex.exe exec-account setup`.
+See [docs/windows-agent-isolation.md](docs/windows-agent-isolation.md).
+
 #### Verifying a release
 
 Each release attaches `SHA256SUMS` and a CycloneDX SBOM, `artex-<tag>.cdx.json` (Go modules in the

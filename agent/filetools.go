@@ -56,6 +56,17 @@ func defaultTools(base string) []actool.CoreTool {
 	return out
 }
 
+// ConfinedFileTool returns the confined file tool name (Read, Write, Edit, Glob,
+// Grep...) over the data directory base, as the agents get it, or nil.
+func ConfinedFileTool(base, name string) actool.CoreTool {
+	for _, t := range defaultTools(base) {
+		if _, ok := t.(*confinedFileTool); ok && t.Name() == name {
+			return t
+		}
+	}
+	return nil
+}
+
 // confinedFileTool keeps the SDK tool's metadata and permission self-check and
 // replaces only Call.
 type confinedFileTool struct {
@@ -140,6 +151,35 @@ func openWorkRoot(base, dir string) (*workRoot, error) {
 	if err != nil || rel == "." || !filepath.IsLocal(rel) {
 		return nil, errors.New("the working directory is not inside the data directory")
 	}
+	comps := strings.Split(rel, string(filepath.Separator))
+	var r *os.Root
+	if workRootAncestorsAsServer {
+		// Windows: the file tools impersonate the agent account, which may not read
+		// the data directory's ancestors (a profile install) nor its intermediate
+		// directories. Resolving the path and opening down to the run directory's
+		// parent happens on a goroutine of its own, which runs with the server's
+		// identity; the run directory itself and everything below are opened as the
+		// agent account, and Windows checks each open against it, not against the
+		// handle of the parent.
+		serverSide(func() { r, err = openWorkAncestors(absBase, rel, comps[:len(comps)-1]) })
+	} else {
+		r, err = openWorkAncestors(absBase, rel, comps[:len(comps)-1])
+	}
+	if err != nil {
+		return nil, err
+	}
+	next, err := r.OpenRoot(comps[len(comps)-1])
+	r.Close()
+	if err != nil {
+		return nil, fmt.Errorf("open the working directory: %w", err)
+	}
+	r = next
+	return &workRoot{Root: r, dir: absDir}, nil
+}
+
+// openWorkAncestors resolves base, checks that base/rel holds no symlink, and opens
+// the root of base and then each of comps inside its parent.
+func openWorkAncestors(absBase, rel string, comps []string) (*os.Root, error) {
 	realBase, err := filepath.EvalSymlinks(absBase)
 	if err != nil {
 		return nil, fmt.Errorf("data directory: %w", err)
@@ -156,7 +196,7 @@ func openWorkRoot(base, dir string) (*workRoot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("data directory: %w", err)
 	}
-	for _, c := range strings.Split(rel, string(filepath.Separator)) {
+	for _, c := range comps {
 		next, err := r.OpenRoot(c)
 		r.Close()
 		if err != nil {
@@ -164,7 +204,18 @@ func openWorkRoot(base, dir string) (*workRoot, error) {
 		}
 		r = next
 	}
-	return &workRoot{Root: r, dir: absDir}, nil
+	return r, nil
+}
+
+// serverSide runs fn on a goroutine of its own and waits for it: that goroutine
+// does not carry the calling thread's file tool identity.
+func serverSide(fn func()) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn()
+	}()
+	<-done
 }
 
 // rel maps a model-supplied path to a path relative to the root. Empty means the

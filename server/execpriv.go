@@ -41,6 +41,32 @@ type ExecPrivilege struct {
 	// PrepareExecPrivilege creates it and sets it: root-owned, outside the workspace
 	// tree the executor can write.
 	ScriptDir string
+
+	// Windows: the executor is a separate local account instead of a uid
+	// (execpriv_windows.go). Account is its name and SID its security identifier,
+	// set by ResolveExecAccount; UID and GID stay zero there.
+	Account string
+	SID     string
+	// SkillDir is the skill root. On Windows PrepareExecPrivilege denies the agent
+	// account writes there (agents load skills as instructions); elsewhere it is
+	// only checked, by the self-test.
+	SkillDir string
+	// BinDir holds the copies of the server binary the agent account runs: the
+	// PowerShell shim and the self-test probe (Windows only).
+	BinDir string
+	// cred is the path of the agent account's credential file (Windows only).
+	cred string
+}
+
+// ResolveExecAccount turns the -exec-account option into an ExecPrivilege on
+// Windows, where agent processes run as a separate local account set up with
+// "artex exec-account setup". name "-" turns it off; an empty name uses the account
+// whose credential is in keyDir, and runs with the server's identity, with one log
+// line, when there is none. explicit reports whether the operator set the option: a
+// named account that cannot be used is an error (fail closed). Elsewhere the option
+// does not apply: set explicitly it is an error, otherwise the drop stays off.
+func ResolveExecAccount(name, keyDir string, explicit bool) (ExecPrivilege, error) {
+	return resolveExecAccount(name, keyDir, explicit)
 }
 
 // ResolveExecPrivilege turns the -exec-uid and -exec-gid options into an

@@ -11,8 +11,13 @@ import "sync/atomic"
 // rights of the agent's shell, on top of the os.Root confinement. Linux only; see
 // filetools_identity_linux.go.
 
-// FileToolIdentity is the uid and gid the file tools access files as.
-type FileToolIdentity struct{ UID, GID uint32 }
+// FileToolIdentity is the identity the file tools access files as: a uid and gid on
+// Linux; on Windows an impersonation token of the agent account
+// (filetools_identity_windows.go), which the server owns and never closes.
+type FileToolIdentity struct {
+	UID, GID uint32
+	Token    uintptr
+}
 
 var fileToolIdentity atomic.Pointer[FileToolIdentity]
 

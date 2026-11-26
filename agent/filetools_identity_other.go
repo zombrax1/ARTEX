@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !windows
 
 package agent
 
@@ -12,3 +12,5 @@ const fileIdentitySupported = false
 func runWithFileIdentity(FileToolIdentity, func()) error {
 	return errors.New("the file tools cannot run as another identity on this platform")
 }
+
+const workRootAncestorsAsServer = false

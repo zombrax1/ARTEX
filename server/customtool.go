@@ -524,15 +524,21 @@ func execPython(ctx context.Context, interp, key, code string, params map[string
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	c := exec.CommandContext(runCtx, interp, tmp)
-	c.Dir = workDir
 	// The allowlist as the executor (execenv_unix.go), then the session proxy env.
-	c.Env = append(agentProcessEnv(priv), sessionEnv...)
+	env := append(agentProcessEnv(priv), sessionEnv...)
 	for k, v := range params { // scalar params mirrored as TOOL_<NAME>
 		if sv, ok := scalarStr(v); ok {
-			c.Env = append(c.Env, "TOOL_"+strings.ToUpper(k)+"="+sv)
+			env = append(env, "TOOL_"+strings.ToUpper(k)+"="+sv)
 		}
 	}
+	// On Windows the tool starts through the agent-account shim (execpriv_windows.go).
+	name, args, env, err := execToolCommand(priv, interp, []string{tmp}, env)
+	if err != nil {
+		return "", err
+	}
+	c := exec.CommandContext(runCtx, name, args...)
+	c.Dir = workDir
+	c.Env = env
 	applyExecCredential(c, priv) // after c.Env: it sets the executor's HOME there
 	pj, _ := json.Marshal(params)
 	c.Stdin = bytes.NewReader(pj) // parameter JSON goes via stdin

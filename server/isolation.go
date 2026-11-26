@@ -15,13 +15,15 @@ import (
 // file tools cannot read the secrets. EnforceIsolation then decides the start:
 //
 //   - The self-test passes: the server starts isolated.
-//   - Linux with the privilege drop on (the server is root, as in the Docker image):
-//     isolation is expected there and the self-test shows it is broken, so the start
-//     stops. The development escape -dev-insecure-no-isolation, off by default, lets
-//     it go on degraded.
-//   - Anywhere else (not Linux, the server is not root, or -exec-uid=-1): isolation
-//     cannot be built on that host, so the server starts degraded without any flag.
-//     The systemd unit (non-root), dev.sh, Windows and macOS start as before.
+//   - Isolation is configured: Linux with the privilege drop on (the server is root,
+//     as in the Docker image), or Windows with an agent account set up ("artex
+//     exec-account setup", execaccount_windows.go). Isolation is expected there and
+//     the self-test shows it is broken, so the start stops. The development escape
+//     -dev-insecure-no-isolation, off by default, lets it go on degraded.
+//   - Anywhere else (macOS, Linux when the server is not root or -exec-uid=-1,
+//     Windows without an agent account): isolation is not set up on that host, so
+//     the server starts degraded without any flag. The systemd unit (non-root),
+//     dev.sh, Windows and macOS start as before.
 //
 // A degraded start logs a warning banner that says what is exposed, and reports the
 // state in GET /api/health to a signed-in caller, which the web UI shows as a
@@ -72,24 +74,26 @@ func EnforceIsolation(goos string, p ExecPrivilege, selfTest error, devEscape bo
 		return IsolationStatus{Mode: IsolationIsolated}, nil
 	}
 	if isolationRequired(goos, p) && !devEscape {
-		return IsolationStatus{}, fmt.Errorf("agent isolation self-test failed: %v. A Linux server running as root with the privilege drop does not start without agent isolation: fix the cause above, or pass -%s for development only", selfTest, DevNoIsolationFlag)
+		return IsolationStatus{}, fmt.Errorf("agent isolation self-test failed: %v. A server with agent isolation configured (Linux as root with the privilege drop, or Windows with an agent account) does not start without it: fix the cause above, or pass -%s for development only", selfTest, DevNoIsolationFlag)
 	}
 	logDegradedBanner(selfTest, isolationRequired(goos, p))
 	return IsolationStatus{Mode: IsolationDegraded, Reason: selfTest.Error()}, nil
 }
 
-// isolationRequired reports whether the host can isolate agents, so that a failed
-// self-test means broken isolation: Linux, with the privilege drop on (root).
+// isolationRequired reports whether the host is set up to isolate agents, so that a
+// failed self-test means broken isolation: Linux with the privilege drop on (root),
+// or Windows with an agent account.
 func isolationRequired(goos string, p ExecPrivilege) bool {
-	return goos == "linux" && p.Enabled
+	return (goos == "linux" || goos == "windows") && p.Enabled
 }
 
 // degradedBanner is the warning a degraded start logs. escaped is set when the start
 // went on only through the development escape.
 func degradedBanner(cause error, escaped bool) []string {
 	bar := strings.Repeat("!", 78)
-	why := "!! This host cannot isolate agents: that needs Linux and a root server with the" +
-		"\n!! privilege drop (-exec-uid), as in the Docker image."
+	why := "!! This host cannot isolate agents as configured: that needs Linux and a root" +
+		"\n!! server with the privilege drop (-exec-uid), as in the Docker image, or on" +
+		"\n!! Windows an agent account (run \"artex exec-account setup\" once, elevated)."
 	if escaped {
 		why = "!! -" + DevNoIsolationFlag + " is set. DEVELOPMENT ONLY."
 	}
