@@ -43,6 +43,8 @@ import { cn } from "@/lib/utils";
 import { t } from "@/i18n";
 import { setVisibleInterval } from "@/lib/polling";
 import { useActiveCompany } from "@/stores/company/company-store";
+import { SystemResources } from "./_components/system-resources";
+import { formatTokens as fmtTokens } from "@/lib/format-tokens";
 
 // ── chart constants ───────────────────────────────────────────────────────────
 
@@ -64,12 +66,6 @@ function fmtRel(ts?: string | number): string {
   const h = Math.floor(m / 60);
   if (h < 24) return t("{n}h ago", { n: h });
   return t("{n}d ago", { n: Math.floor(h / 24) });
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
-  return String(n);
 }
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
@@ -506,6 +502,9 @@ export default function DashboardPage() {
           <p className="text-xs text-muted-foreground">{t("System-wide status · live refresh")}</p>
         </div>
       </div>
+
+      {/* ── Load of the machine running ARTEX ── */}
+      <SystemResources />
 
       {/* ── Row 1: 5 stat cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

@@ -140,6 +140,7 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useActiveCompanyID } from "@/stores/company/company-store";
+import { formatTokens as fmtTokens } from "@/lib/format-tokens";
 
 // fmtBytes renders a human file size for the upload manifest.
 function fmtBytes(n: number): string {
@@ -168,13 +169,6 @@ function appendUploads(desc: string, atts: ChatAttachment[]): string {
 // worker), so the list has to be pulled; 10s is plenty for status / progress / token changes.
 const POLL_MS = 10_000;
 const MAX_SOURCE_TASKS = 8;
-
-// fmtTokens renders a compact token count (1234 → 1.2k, 2_000_000 → 2M).
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1) + "M";
-  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k";
-  return String(n);
-}
 
 // fmtDuration renders a run duration in seconds as a compact human string.
 function fmtDuration(sec: number): string {
