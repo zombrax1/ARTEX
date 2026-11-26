@@ -1249,6 +1249,27 @@ export interface LLMPoolMember {
 
 // Per-model facts an Ollama server reports when its models are listed (POST /api/llm/models, provider ollama).
 // tools is absent when the server does not say; ARTEX agents need tool calls, so false means the model cannot run a task.
+// Model readiness test (POST /api/llm/profiles/{id}/readiness): what the model
+// actually did with tools, as opposed to what its provider advertises.
+export type ReadinessVerdict = "ready" | "limited" | "not_ready";
+export interface ReadinessCheck {
+  id: "tool_call" | "task";
+  passed: boolean;
+  latency_ms: number;
+  problems?: string[];
+  reply?: string;
+  calls?: string[];
+}
+export interface ReadinessReport {
+  model: string;
+  verdict: ReadinessVerdict;
+  summary: string;
+  checks: ReadinessCheck[];
+  tested_at: string;
+  latency_ms: number;
+  stale: boolean; // the profile now uses a different model than the one tested
+}
+
 export interface OllamaModelInfo {
   tools?: boolean;
   size_bytes?: number;

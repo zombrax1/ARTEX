@@ -77,6 +77,7 @@ import type {
   NotificationMeta,
   PromptVar,
   PromptVersion,
+  ReadinessReport,
   SessionTokenUsage,
   Settings,
   Severity,
@@ -1199,6 +1200,11 @@ export const api = {
   // Global retry policy (count + interval for each of the five layers). All zeros = built-in defaults everywhere.
   llmRetryPolicy: () => get<LLMRetryPolicy>("/llm/retry-policy"),
   saveLLMRetryPolicy: (p: LLMRetryPolicy) => post<LLMRetryPolicy>("/llm/retry-policy", p),
+  // Last measured readiness per profile id; untested profiles are absent.
+  llmReadiness: () => get<Record<string, ReadinessReport>>("/llm/readiness"),
+  // Runs the model readiness test on a stored profile (can take a minute on a local model).
+  runLLMReadiness: (id: string | number) =>
+    post<{ ok: boolean; error?: string; report?: ReadinessReport }>(`/llm/profiles/${id}/readiness`, {}),
   fetchLLMModels: (provider: string, base_url: string, api_key: string, proxy = "", profile_id?: number) =>
     post<{ ok: boolean; error?: string; models?: string[]; details?: Record<string, OllamaModelInfo> }>("/llm/models", {
       provider,

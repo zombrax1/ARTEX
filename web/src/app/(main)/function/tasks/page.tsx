@@ -46,6 +46,7 @@ import {
 import { toast } from "sonner";
 
 import { AssetInterceptRulesEditor } from "@/components/asset-intercept-rules-editor";
+import { ReadinessWarning } from "@/components/model-readiness";
 import { StatusBadge } from "@/components/status-badge";
 import { TablePagination } from "@/components/table-pagination";
 import { TaskLLMProfileChain } from "@/components/task-llm-profile-chain";
@@ -3441,6 +3442,7 @@ function CreateTaskSheet({
                 inputId="llm-profiles"
                 portalContainer={sheetContentRef}
               />
+              <ReadinessWarning profiles={profiles} ids={llmProfileIDs} />
               <FieldDescription>
                 {t("Reorder profiles to choose worker rotation order or failover priority. Saving the chain resets exhausted profiles.")}
               </FieldDescription>

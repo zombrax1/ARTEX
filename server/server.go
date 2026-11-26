@@ -1114,6 +1114,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/llm/queue", s.llmQueue) // live per-profile in-flight / queued request counts
 	mux.HandleFunc("POST /api/llm/pool/reset", s.pgLLMPoolReset)
 	mux.HandleFunc("POST /api/llm/models", s.pgListModels)
+	mux.HandleFunc("GET /api/llm/readiness", s.llmReadiness)                   // last measured readiness per profile
+	mux.HandleFunc("POST /api/llm/profiles/{id}/readiness", s.runLLMReadiness) // run the model readiness test on a profile
 
 	// interception rule management
 	mux.HandleFunc("GET /api/intercept/rules", s.interceptListRules)
