@@ -123,9 +123,12 @@ export function ReadinessDialog({
       return;
     }
     setAdvertised({ state: "loading" });
+    // A slow answer for a profile shown earlier must not overwrite this one.
+    let stale = false;
     api
       .fetchLLMModels(profile.format, profile.base_url ?? "", "", "", Number(profile.id))
       .then((r) => {
+        if (stale) return;
         const tools = r.details?.[profile.model]?.tools;
         setAdvertised(
           tools === undefined
@@ -133,7 +136,12 @@ export function ReadinessDialog({
             : { state: "known", tools },
         );
       })
-      .catch(() => setAdvertised({ state: "unknown", note: t("The model list could not be read.") }));
+      .catch(() => {
+        if (!stale) setAdvertised({ state: "unknown", note: t("The model list could not be read.") });
+      });
+    return () => {
+      stale = true;
+    };
   }, [open, profile]);
 
   const run = () => {
