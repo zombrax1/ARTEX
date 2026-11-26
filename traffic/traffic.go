@@ -1198,22 +1198,23 @@ func (t *Traffic) Search(host string, page, size int) ([]ExchangeMeta, error) {
 	return out, rows.Err()
 }
 
-// Since returns up to limit exchanges recorded at or after since (unix seconds),
-// newest first, optionally only for the given hosts (host names without port; an
-// empty list means every host). Bodies are never read.
-func (t *Traffic) Since(hosts []string, since int64, limit int) ([]ExchangeMeta, error) {
+// After returns up to limit exchanges recorded after the (ts, id) cursor, oldest
+// first, optionally only for the given hosts (host names without port; an empty
+// list means every host). Passing the last row's ts and id back reads the next
+// page. Bodies are never read.
+func (t *Traffic) After(hosts []string, ts int64, id string, limit int) ([]ExchangeMeta, error) {
 	if limit <= 0 || limit > 100000 {
 		limit = 20000
 	}
-	q := `SELECT id,ts,host,method,url_template,url,status,content_type,resp_len,path FROM exchanges WHERE ts>=?`
-	args := []any{since}
+	q := `SELECT id,ts,host,method,url_template,url,status,content_type,resp_len,path FROM exchanges WHERE (ts>? OR (ts=? AND id>?))`
+	args := []any{ts, ts, id}
 	if len(hosts) > 0 {
 		q += ` AND host IN (?` + strings.Repeat(",?", len(hosts)-1) + `)`
 		for _, h := range hosts {
 			args = append(args, h)
 		}
 	}
-	q += ` ORDER BY ts DESC LIMIT ?`
+	q += ` ORDER BY ts ASC, id ASC LIMIT ?`
 	args = append(args, limit)
 	rows, err := t.db.Query(q, args...)
 	if err != nil {
