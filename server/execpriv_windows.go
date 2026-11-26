@@ -122,6 +122,31 @@ func makeLeafDirWin(base, leaf string, sid *windows.SID, aces []fileACE) error {
 	return addACEs(leaf, sid, aces)
 }
 
+// traverseACEs let the agent account pass through a directory and read its
+// attributes, not list it.
+var traverseACEs = []fileACE{{windows.GRANT_ACCESS, aclTraverse, windows.NO_INHERITANCE}}
+
+// shareAncestorsWin gives the agent account traverseACEs on dataDir, on every
+// directory created below it (by inheritance, directories only) and on each of its
+// ancestors short of the volume root.
+func shareAncestorsWin(dataDir string, sid *windows.SID) error {
+	if err := addACEs(dataDir, sid, []fileACE{
+		{windows.GRANT_ACCESS, aclTraverse, windows.SUB_CONTAINERS_ONLY_INHERIT},
+	}); err != nil {
+		return fmt.Errorf("let the agent account traverse %s: %w", dataDir, err)
+	}
+	for dir := filepath.Dir(dataDir); ; dir = filepath.Dir(dir) {
+		if filepath.Dir(dir) == dir {
+			return nil // the volume root: readable by local users by default
+		}
+		// A directory the server may not change (C:\Users, say) already lets
+		// local users through: skip it quietly.
+		if err := addACEs(dir, sid, traverseACEs); err != nil && !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			log.Printf("[exec] %v", err)
+		}
+	}
+}
+
 // shareTaskDirWin gives the agent account the run directories of a task directory,
 // and the entries that date from before the run-directory layout (see shareTaskDir
 // in execpriv_unix.go). Links and junctions are left alone.
@@ -307,6 +332,14 @@ func PrepareExecPrivilege(p *ExecPrivilege, dataDir, keyDir, configPath string) 
 		return err
 	}
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return err
+	}
+
+	// The agent's shells resolve their working directory component by component
+	// (PowerShell falls back to the drive root otherwise), so the account may
+	// traverse and read the attributes of the data directory's ancestors and of
+	// every directory below it, without listing them or reading files there.
+	if err := shareAncestorsWin(dataDir, sid); err != nil {
 		return err
 	}
 

@@ -60,6 +60,7 @@ const (
 	// What the agent account is granted or denied.
 	aclRead      = fileReadData | fileReadEA | fileReadAttributes | accessReadControl | accessSynchronize
 	aclReadExec  = aclRead | fileExecute
+	aclTraverse  = fileExecute | fileReadAttributes | accessSynchronize // no listing
 	aclWrite     = fileWriteData | fileAppendData | fileWriteEA | fileWriteAttributes | accessReadControl | accessSynchronize
 	aclModify    = aclReadExec | aclWrite | fileDeleteChild | accessDelete
 	aclDenyWrite = fileWriteData | fileAppendData | fileWriteEA | fileWriteAttributes | fileDeleteChild |

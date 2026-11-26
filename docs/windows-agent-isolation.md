@@ -32,6 +32,10 @@ Then restart ARTEX normally, **not** elevated. At start it finds the credential 
   for that account only; nothing changes for other users);
 - shares the task run directories with the account (read and write inside, no delete or replace of
   the directory itself), and the spill, script and shim directories read-only;
+- lets the account pass through the data directory's folders and its parent folders (traverse and
+  read attributes only, no listing and no file access), so a shell can start in its run directory
+  when ARTEX lives in your user profile. This entry stays on those folders after
+  `exec-account remove`; it names a deleted account and grants nothing;
 - starts every agent process as the account through a shim (`data\exec-bin`): a copy of
   `artex.exe` named `powershell.exe` placed first on `PATH`, which is what the agent shell runs. The
   shim signs the account in with `CreateProcessWithLogonW`, on a private window station and desktop
