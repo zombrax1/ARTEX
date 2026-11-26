@@ -58,6 +58,7 @@ type fakeOllama struct {
 	createAuth  string
 	failCreate  bool
 	chatModels  []string
+	gone        map[string]bool // models that answer 404 until created again
 }
 
 func (f *fakeOllama) handler() http.Handler {
@@ -69,6 +70,9 @@ func (f *fakeOllama) handler() http.Handler {
 		case "/api/create":
 			f.createCalls++
 			f.createAuth = r.Header.Get("Authorization")
+			if m, ok := f.createBody["model"].(string); ok && !f.failCreate {
+				delete(f.gone, m)
+			}
 			_ = json.Unmarshal(body, &f.createBody)
 			if f.failCreate {
 				http.Error(w, `{"error":"unknown endpoint"}`, http.StatusNotFound)
@@ -81,6 +85,10 @@ func (f *fakeOllama) handler() http.Handler {
 			}
 			_ = json.Unmarshal(body, &req)
 			f.chatModels = append(f.chatModels, req.Model)
+			if f.gone[req.Model] {
+				http.Error(w, `{"error":"model '`+req.Model+`' not found"}`, http.StatusNotFound)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"x","object":"chat.completion","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 		default:
@@ -210,5 +218,44 @@ func TestContextWindowNotAppliedToOpenAIProfiles(t *testing.T) {
 	defer f.mu.Unlock()
 	if f.createCalls != 0 || len(f.chatModels) != 1 || f.chatModels[0] != "gpt-x" {
 		t.Fatalf("create calls %d, chat models %v", f.createCalls, f.chatModels)
+	}
+}
+
+// A variant removed while ARTEX runs is recreated: the request that finds it
+// gone goes to the base model, and the next one creates the variant again.
+func TestOllamaVariantRecreatedAfterRemoval(t *testing.T) {
+	resetOllamaVariants()
+	f := &fakeOllama{gone: map[string]bool{}}
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+
+	cfg := ConfigFrom("ollama", "qwen3:14b", srv.URL, "", "")
+	cfg.ContextWindowK = 32
+	cfg.Stream = false
+	run := func() {
+		t.Helper()
+		if _, reply, err := TestConnection(context.Background(), cfg); err != nil || reply != "OK" {
+			t.Fatalf("TestConnection: reply %q err %v", reply, err)
+		}
+	}
+	run() // creates the variant
+	f.mu.Lock()
+	f.gone["qwen3:14b-artex-ctx32k"] = true // `ollama rm`
+	f.mu.Unlock()
+	run() // 404 on the variant, served by the base model
+	run() // recreates the variant
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createCalls != 2 {
+		t.Fatalf("create calls = %d, want 2", f.createCalls)
+	}
+	want := []string{"qwen3:14b-artex-ctx32k", "qwen3:14b-artex-ctx32k", "qwen3:14b", "qwen3:14b-artex-ctx32k"}
+	if len(f.chatModels) != len(want) {
+		t.Fatalf("chat models = %v, want %v", f.chatModels, want)
+	}
+	for i := range want {
+		if f.chatModels[i] != want[i] {
+			t.Fatalf("chat models = %v, want %v", f.chatModels, want)
+		}
 	}
 }
