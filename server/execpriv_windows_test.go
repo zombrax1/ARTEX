@@ -181,7 +181,7 @@ func TestWindowsAgentAccountIsolation(t *testing.T) {
 			// The agent's shell: Norma starts "powershell" from PATH.
 			t.Setenv("ARTEX_TEST_SECRET", "s3cret-value")
 			c := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
-				`[Security.Principal.WindowsIdentity]::GetCurrent().Name; "secret=[$env:ARTEX_TEST_SECRET]"; "loc=[$((Get-Location).Path)] cwd=[$([Environment]::CurrentDirectory)]"; try { Set-Location -LiteralPath ([Environment]::CurrentDirectory); "loc2=[$((Get-Location).Path)]" } catch { "setloc=[$_]" }; Set-Content -Path out.txt -Value hi; exit 7`)
+				`[Security.Principal.WindowsIdentity]::GetCurrent().Name; "secret=[$env:ARTEX_TEST_SECRET]"; Set-Content -Path out.txt -Value hi; exit 7`)
 			c.Dir = run
 			out, err := c.CombinedOutput()
 			var ee *exec.ExitError
