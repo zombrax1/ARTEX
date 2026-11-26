@@ -3,14 +3,18 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	actool "github.com/Autumn-27/norma/tool"
 
 	"github.com/Autumn-27/artex/agent"
 	"github.com/Autumn-27/artex/traffic"
@@ -247,6 +251,21 @@ func TestWindowsAgentAccountIsolation(t *testing.T) {
 				openErr = os.WriteFile(filepath.Join(run, "tool.txt"), []byte("x"), 0o644)
 			}); err != nil || openErr != nil {
 				t.Errorf("the file tools could not write the run directory: %v %v", err, openErr)
+			}
+
+			// The agents' confined file tools, through the whole path from the data
+			// directory down, as the account.
+			tc := &actool.ToolContext{WorkingDir: run}
+			write := agent.ConfinedFileTool(f.data, "Write")
+			read := agent.ConfinedFileTool(f.data, "Read")
+			if write == nil || read == nil {
+				t.Fatal("no confined Write or Read tool")
+			}
+			if res, err := write.Call(context.Background(), json.RawMessage(`{"file_path":"ft.txt","content":"from-the-file-tool"}`), tc); err != nil || res.IsError {
+				t.Errorf("confined Write: %v %s", err, res.Flatten())
+			}
+			if res, err := read.Call(context.Background(), json.RawMessage(`{"file_path":"ft.txt"}`), tc); err != nil || res.IsError || !strings.Contains(res.Flatten(), "from-the-file-tool") {
+				t.Errorf("confined Read: %v %s", err, res.Flatten())
 			}
 
 			// The probe reports what the account can reach: a file in its run directory.

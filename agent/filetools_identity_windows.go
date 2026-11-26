@@ -71,3 +71,6 @@ func enterFileIdentity(tok windows.Token) error {
 	}
 	return nil
 }
+
+// workRootAncestorsAsServer: see openWorkRoot.
+const workRootAncestorsAsServer = true

@@ -291,6 +291,12 @@ func execAccountSetup(account, keyDir string, reuse, hide bool) error {
 	case r == 0:
 		fmt.Printf("Created the local account %s.\n", account)
 	case r == nerrUserExists:
+		// Never reset the password of the operator's own account.
+		if sid, err := lookupLocalUser(account); err != nil {
+			return fmt.Errorf("look up the existing account %s: %w", account, err)
+		} else if sid.String() == self {
+			return fmt.Errorf("%s is the Windows user you are signed in as: the agent account must be a separate account", account)
+		}
 		c, err := accountComment(account)
 		if err != nil {
 			return fmt.Errorf("read the existing account %s: %w", account, err)
