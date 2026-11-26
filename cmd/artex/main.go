@@ -116,6 +116,9 @@ func run() int {
 		devNoIsolation = flag.Bool(server.DevNoIsolationFlag, false, "DEVELOPMENT ONLY: with agent isolation configured (Linux as root, or a Windows agent account), start even when the agent isolation self-test fails; agent processes and file tools may then read the server's keys, config and database credentials")
 	)
 	flag.Parse()
+	// Windows: no 8.3 short names in the data directory, which agent shells run in
+	// (server.LongPath).
+	*dataDir = server.LongPath(*dataDir)
 
 	// hand the build version to the server package so GET /api/health can report it
 	// to the frontend top bar.

@@ -162,7 +162,7 @@ func TestWindowsAgentAccountIsolation(t *testing.T) {
 		t.Skip("set ARTEX_WINDOWS_ACCOUNT_TEST=1 on a disposable, elevated Windows host: this creates a local account")
 	}
 	drive := filepath.VolumeName(os.Getenv("SystemRoot")) + `\`
-	for _, base := range []struct{ name, dir string }{{"profile", t.TempDir()}, {"drive-root", drive}} {
+	for _, base := range []struct{ name, dir string }{{"profile", LongPath(t.TempDir())}, {"drive-root", drive}} {
 		t.Run(base.name, func(t *testing.T) {
 			f := newWindowsAccountFixture(t, base.dir)
 			if err := IsolationSelfTest(f.priv, f.targets()); err != nil {

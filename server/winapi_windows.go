@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -399,4 +400,38 @@ func envListToBlock(env []string) (*uint16, error) {
 		b = append(b, 0)
 	}
 	return &b[0], nil
+}
+
+// LongPath returns path with each existing component in its long form: an 8.3
+// short name such as C:\Users\RUNNER~1 makes PowerShell (.NET Framework) expand the
+// path by listing every ancestor, which the agent account may not do in the
+// operator's profile. The part of path that does not exist yet is kept as is.
+func LongPath(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	rest := ""
+	dir := abs
+	for {
+		if _, err := os.Stat(dir); err == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return abs
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+		dir = parent
+	}
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return abs
+	}
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n, err := windows.GetLongPathName(p, &buf[0], uint32(len(buf)))
+	if err != nil || n == 0 || int(n) > len(buf) {
+		return abs
+	}
+	return filepath.Join(windows.UTF16ToString(buf[:n]), rest)
 }

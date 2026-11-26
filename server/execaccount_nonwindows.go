@@ -29,3 +29,6 @@ func RunExecAccountCommand(args []string) int {
 func execToolCommand(p ExecPrivilege, name string, args, env []string) (string, []string, []string, error) {
 	return name, args, env, nil
 }
+
+// LongPath returns path unchanged: short names are a Windows matter.
+func LongPath(path string) string { return path }
