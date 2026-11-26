@@ -95,8 +95,12 @@ func TestReadinessWrongArgumentTypes(t *testing.T) {
 	if r.Verdict != ReadinessNotReady {
 		t.Fatalf("verdict %s", r.Verdict)
 	}
-	if p := strings.Join(r.Checks[0].Problems, " "); !strings.Contains(p, "as a string") {
-		t.Fatalf("problems = %q", p)
+	p := strings.Join(r.Checks[0].Problems, " ")
+	// An enum value in another case is not the declared value.
+	for _, want := range []string{"as a string", "protocol is TCP"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("problems %q miss %q", p, want)
+		}
 	}
 }
 

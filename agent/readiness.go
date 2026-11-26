@@ -194,10 +194,10 @@ func checkToolCall(ctx context.Context, prov llm.Provider, c Config) ReadinessCh
 	default:
 		ch.Problems = append(ch.Problems, "port is missing.")
 	}
-	if p, _ := in["protocol"].(string); strings.ToLower(p) != "tcp" {
+	if p, _ := in["protocol"].(string); p != "tcp" {
 		ch.Problems = append(ch.Problems, fmt.Sprintf("protocol is %v, expected tcp.", in["protocol"]))
 	}
-	if s, _ := in["state"].(string); strings.ToLower(s) != "open" {
+	if s, _ := in["state"].(string); s != "open" {
 		ch.Problems = append(ch.Problems, fmt.Sprintf("state is %v, expected open.", in["state"]))
 	}
 	if len(calls) > 1 {
@@ -279,7 +279,7 @@ func checkTask(ctx context.Context, prov llm.Provider, c Config) ReadinessCheck 
 			if !strings.Contains(title+" "+evidence, "2.4.49") {
 				ch.Problems = append(ch.Problems, "The report does not quote the server version from the tool result (Apache/2.4.49).")
 			}
-			switch sev, _ := reported["severity"].(string); strings.ToLower(sev) {
+			switch sev, _ := reported["severity"].(string); sev {
 			case "info", "low", "medium", "high", "critical":
 			default:
 				ch.Problems = append(ch.Problems, fmt.Sprintf("severity %v is not one of the allowed values.", reported["severity"]))
