@@ -64,6 +64,9 @@ func TestCompareAccessFlagsCrossOrgResponse(t *testing.T) {
 	add("dave", "user", "org-a", "") // no session: skipped by default
 
 	ctx := context.Background()
+	if _, err := s.runAccessCheck(ctx, "compare_access", tid, agent.AccessCheckRequest{URL: strings.Replace(target.URL, "http://", "http://alice:pw@", 1) + "/orders/1"}); err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Fatalf("URL with userinfo: %v", err)
+	}
 	if _, err := s.runAccessCheck(ctx, "compare_access", tid, agent.AccessCheckRequest{Method: "DELETE", URL: target.URL + "/orders/1"}); err == nil {
 		t.Fatal("DELETE ran without allow_state_change")
 	}

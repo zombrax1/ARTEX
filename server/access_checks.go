@@ -144,6 +144,11 @@ func (s *Server) runAccessCheck(ctx context.Context, toolName string, taskID int
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return db.AccessCheck{}, errors.New("url must be an absolute http(s) URL")
 	}
+	if u.User != nil {
+		// net/http turns URL userinfo into Basic auth on every replay, the
+		// anonymous one included; sessions come from the accounts only.
+		return db.AccessCheck{}, errors.New("url must not carry credentials (user:password@); save them on a test account instead")
+	}
 	if res := intercept.GateRenderedURL(ctx, toolName, rawURL); res.Code != "" {
 		return db.AccessCheck{}, errors.New(guard.TargetBlockMessage(res))
 	}
