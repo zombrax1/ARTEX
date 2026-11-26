@@ -201,3 +201,57 @@ func TestParseBranchingSelfReference(t *testing.T) {
 		t.Fatal("parsing a schema whose allOf references itself 20 times did not finish")
 	}
 }
+
+func TestParseAnonymousRootSecurity(t *testing.T) {
+	for _, sec := range []string{`[{}]`, `[{"bearer":[]},{}]`} {
+		doc := `{"openapi":"3.0.0","info":{"title":"s"},"security":` + sec + `,"paths":{"/a":{"get":{}},"/b":{"get":{"security":[{"bearer":[]}]}}}}`
+		def, err := Parse([]byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(def.Operations) != 2 {
+			t.Fatalf("operations = %+v", def.Operations)
+		}
+		for _, op := range def.Operations {
+			if want := op.Path == "/b"; op.Auth != want {
+				t.Errorf("security %s: %s auth = %v, want %v", sec, op.Path, op.Auth, want)
+			}
+		}
+	}
+}
+
+func TestParseAllOfWithSiblingProperties(t *testing.T) {
+	doc := `{"openapi":"3.0.0","info":{"title":"s"},"paths":{"/a":{"post":{"requestBody":{"content":{"application/json":{"schema":{
+	  "allOf":[{"properties":{"base":{"type":"string"}}}],
+	  "properties":{"extra":{"type":"integer"}},"required":["extra","base"]}}}}}}}}`
+	def, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Param{}
+	for _, prm := range def.Operations[0].Params {
+		got[prm.Name] = prm
+	}
+	if !got["base"].Required || !got["extra"].Required || got["extra"].Type != "integer" || len(got) != 2 {
+		t.Fatalf("params = %+v", def.Operations[0].Params)
+	}
+}
+
+func TestParsePostmanCollectionNoAuth(t *testing.T) {
+	doc := `{"info":{"name":"c","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+	  "auth":{"type":"noauth"},
+	  "item":[{"name":"a","request":{"method":"GET","url":"https://example.com/a"}},
+	    {"name":"b","request":{"method":"GET","url":"https://example.com/b","auth":{"type":"bearer"}}}]}`
+	def, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(def.Operations) != 2 {
+		t.Fatalf("operations = %+v", def.Operations)
+	}
+	for _, op := range def.Operations {
+		if want := op.Path == "/b"; op.Auth != want {
+			t.Errorf("%s auth = %v, want %v", op.Path, op.Auth, want)
+		}
+	}
+}

@@ -281,17 +281,19 @@ func (p *oaParser) bodyParamsAt(schema map[string]any, in string, depth int) []P
 	if schema == nil || depth > maxSchemaDepth {
 		return nil
 	}
-	if all := arr(schema["allOf"]); len(all) > 0 {
-		var out []Param
-		for _, s := range all {
-			out = append(out, p.bodyParamsAt(obj(s), in, depth+1)...)
-			if len(out) > maxParams {
-				return out[:maxParams]
-			}
+	var composed []Param
+	all := arr(schema["allOf"])
+	for _, s := range all {
+		composed = append(composed, p.bodyParamsAt(obj(s), in, depth+1)...)
+		if len(composed) > maxParams {
+			return composed[:maxParams]
 		}
-		return out
 	}
 	props := obj(schema["properties"])
+	if len(all) > 0 {
+		// The schema's own properties and required list sit beside allOf.
+		return p.mergeOwnParams(composed, schema, props, in, depth)
+	}
 	if len(props) == 0 {
 		if t := p.schemaTypeAt(schema, depth+1); t != "" {
 			return []Param{{Name: "(body)", In: in, Type: t}}
@@ -310,6 +312,41 @@ func (p *oaParser) bodyParamsAt(schema map[string]any, in string, depth int) []P
 	out := make([]Param, 0, len(names))
 	for _, k := range names {
 		out = append(out, Param{Name: k, In: in, Required: req[k], Type: p.schemaTypeAt(obj(props[k]), depth+1)})
+	}
+	return out
+}
+
+// mergeOwnParams adds a schema's own properties to the parameters its allOf
+// composed, and marks the fields its required list names.
+func (p *oaParser) mergeOwnParams(out []Param, schema, props map[string]any, in string, depth int) []Param {
+	req := map[string]bool{}
+	for _, r := range arr(schema["required"]) {
+		req[str(r)] = true
+	}
+	seen := map[string]int{}
+	for i, prm := range out {
+		seen[prm.Name] = i
+		if req[prm.Name] {
+			out[i].Required = true
+		}
+	}
+	names := make([]string, 0, len(props))
+	for k := range props {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		prm := Param{Name: k, In: in, Required: req[k], Type: p.schemaTypeAt(obj(props[k]), depth+1)}
+		if i, ok := seen[k]; ok {
+			prm.Required = prm.Required || out[i].Required
+			out[i] = prm
+			continue
+		}
+		if len(out) >= maxParams {
+			break
+		}
+		seen[k] = len(out)
+		out = append(out, prm)
 	}
 	return out
 }
@@ -381,6 +418,17 @@ func (p *oaParser) baseURL() string {
 	return serverURL(arr(p.root["servers"]))
 }
 
+// requiresAuth reports whether an OpenAPI security list demands credentials: it
+// is not empty and has no {} entry, which allows anonymous access.
+func requiresAuth(security []any) bool {
+	for _, s := range security {
+		if len(obj(s)) == 0 {
+			return false
+		}
+	}
+	return len(security) > 0
+}
+
 // serverURL is the first server of an OpenAPI servers list, with its variables
 // set to their defaults, or "" for an empty list.
 func serverURL(servers []any) string {
@@ -401,7 +449,7 @@ func parseOpenAPI(root map[string]any, swagger bool) (*Definition, error) {
 	if swagger {
 		def.Format = FormatSwagger
 	}
-	globalAuth := len(arr(root["security"])) > 0
+	globalAuth := requiresAuth(arr(root["security"]))
 	paths := obj(root["paths"])
 	if paths == nil {
 		return nil, errors.New("the definition has no paths")
@@ -457,12 +505,7 @@ func parseOpenAPI(root map[string]any, swagger bool) (*Definition, error) {
 			}
 			auth := globalAuth
 			if sec, ok := op["security"]; ok {
-				auth = len(arr(sec)) > 0
-				for _, s := range arr(sec) {
-					if len(obj(s)) == 0 { // {} = anonymous access allowed
-						auth = false
-					}
-				}
+				auth = requiresAuth(arr(sec))
 			}
 			if params == nil {
 				params = []Param{}
@@ -527,7 +570,7 @@ func parsePostman(doc map[string]any) (*Definition, error) {
 			return m
 		})
 	}
-	collectionAuth := doc["auth"] != nil
+	collectionAuth := doc["auth"] != nil && str(obj(doc["auth"])["type"]) != "noauth"
 	var walk func(items []any, inheritedAuth bool)
 	walk = func(items []any, inheritedAuth bool) {
 		for _, raw := range items {
