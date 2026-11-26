@@ -52,16 +52,27 @@ for s in default google selector1 selector2 k1 k2 mail dkim s1 s2 smtp mandrill 
 done
 ```
 
-A found key of 1024 bits or less (`p=` value shorter than about 220 base64
-characters) is Low.
+Check the key type before its size. `k=ed25519` keys are always 44 base64
+characters (256 bits) and are strong: never rate them by length. For RSA
+(`k=rsa`, or no `k=` tag, which means RSA), a key of 1024 bits or less (`p=`
+value shorter than about 220 base64 characters) is Low. An empty `p=` means
+the key was revoked on purpose: Info.
 
 ### CAA and DNSSEC
 - No CAA record: Info (any public CA may issue certificates for the domain).
 - DNSSEC: `dig +dnssec +multi $D SOA` shows `RRSIG` when the zone is signed,
-  and `dig +short DS $D` shows the delegation. Unsigned: Info. Signed zone
-  whose answer lacks the `ad` flag through a validating resolver
-  (`dig @1.1.1.1 $D SOA +dnssec | grep flags`), or `delv $D` failing: Medium,
-  because validating resolvers will refuse the domain.
+  and `dig +short DS $D` shows the delegation (a DS record in the parent zone).
+  Tell three states apart:
+  - **Unsigned** (no RRSIG, no DS): Info.
+  - **Insecure** (RRSIG present but no DS in the parent, so no chain of trust):
+    validating resolvers still answer normally, just without the `ad` flag.
+    Low: the signatures protect nothing until the DS is published.
+  - **Bogus** (DS published but validation fails): validating resolvers answer
+    SERVFAIL. Confirm it before reporting: `dig @1.1.1.1 $D SOA` returns
+    `status: SERVFAIL` while `dig @1.1.1.1 $D SOA +cd` (checking disabled)
+    returns NOERROR, or `delv $D SOA` reports a validation failure. Only then
+    rate it High (the domain does not resolve for users of validating
+    resolvers). A missing `ad` flag alone is not proof of this.
 
 ## 2. Zone transfer on each nameserver
 
