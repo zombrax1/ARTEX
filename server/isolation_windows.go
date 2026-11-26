@@ -5,7 +5,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,8 +45,12 @@ type winProbeSpec struct {
 	// permissions of: the server binary and the shims it runs.
 	Unreplaceable []string `json:"unreplaceable,omitempty"`
 	// SkillDir is walked: no skill file or directory may be writable.
-	SkillDir string             `json:"skill_dir,omitempty"`
-	DB       []isolationProbeDB `json:"db,omitempty"`
+	SkillDir string `json:"skill_dir,omitempty"`
+	// ServerEnv are the SHA-256 digests of the server's own NAME=value entries that
+	// are not on the allowlist, the name upper-cased: the probe reports one it sees.
+	// Digests, so that no secret value travels on a command line.
+	ServerEnv []string           `json:"server_env,omitempty"`
+	DB        []isolationProbeDB `json:"db,omitempty"`
 }
 
 // IsolationSelfTest checks that agent processes and file tools are isolated from
@@ -90,6 +96,12 @@ func winIsolationSpec(p ExecPrivilege, t IsolationTargets) (winProbeSpec, error)
 		return winProbeSpec{}, err
 	}
 	spec := winProbeSpec{SID: p.SID, ServerSID: self, ServerPID: os.Getpid(), SkillDir: t.SkillDir}
+	for _, kv := range os.Environ() {
+		name, v, _ := strings.Cut(kv, "=")
+		if name != "" && !executorEnvAllowed(name) {
+			spec.ServerEnv = append(spec.ServerEnv, envDigest(name, v))
+		}
+	}
 	if t.KeyDir != "" {
 		spec.Unreadable = append(spec.Unreadable, filepath.Join(t.KeyDir, "jwt.key"), filepath.Join(t.KeyDir, "secret.key"))
 	}
@@ -366,7 +378,7 @@ func checkIsolationAsAgent(spec winProbeSpec) []string {
 			return nil
 		})
 	}
-	failures = append(failures, envFailures(tok)...)
+	failures = append(failures, envFailures(spec.ServerEnv)...)
 	for i := range spec.DB {
 		db := &spec.DB[i]
 		if err := connectWithoutPassword(db); err == nil {
@@ -379,10 +391,21 @@ func checkIsolationAsAgent(spec winProbeSpec) []string {
 // shellOwnEnv are the variables PowerShell itself sets for the programs it starts.
 var shellOwnEnv = upperSet("PSModulePath")
 
-// envFailures reports each variable of the probe's environment that neither comes
-// from the agent account's own environment nor is on the allowlist: it came from
-// the server.
-func envFailures(tok windows.Token) []string {
+// envDigest is the digest of one environment entry for winProbeSpec.ServerEnv.
+func envDigest(name, value string) string {
+	sum := sha256.Sum256([]byte(strings.ToUpper(name) + "=" + value))
+	return hex.EncodeToString(sum[:])
+}
+
+// envFailures reports each variable of the probe's environment that holds the
+// server's value and is neither on the allowlist nor the same in the agent account's
+// own environment (a machine-wide variable, which every user can read anyway): it
+// came from the server.
+func envFailures(serverEnv []string) []string {
+	fromServer := map[string]bool{}
+	for _, d := range serverEnv {
+		fromServer[d] = true
+	}
 	var real windows.Token
 	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY|windows.TOKEN_DUPLICATE|windows.TOKEN_IMPERSONATE, &real); err != nil {
 		return []string{fmt.Sprintf("the agent shell cannot open its token: %v", err)}
@@ -404,10 +427,10 @@ func envFailures(tok windows.Token) []string {
 			continue
 		}
 		up := strings.ToUpper(name)
-		if executorEnvAllowed(name) || shellOwnEnv[up] || ownSet[up+"="+v] {
+		if executorEnvAllowed(name) || shellOwnEnv[up] || ownSet[up+"="+v] || !fromServer[envDigest(name, v)] {
 			continue
 		}
-		failures = append(failures, fmt.Sprintf("the variable %s reached the agent shell: it is neither on the agent environment allowlist nor the agent account's own", name))
+		failures = append(failures, fmt.Sprintf("the variable %s reached the agent shell: it holds the server's value and is not on the agent environment allowlist", name))
 	}
 	return failures
 }
