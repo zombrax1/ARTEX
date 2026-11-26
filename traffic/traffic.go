@@ -359,9 +359,18 @@ func Open(dir, addr string) (*Traffic, error) {
 	// readable by every local user, the agents' executor included. Only the proxy
 	// in this process needs it. The certificate beside it (CACertPath) stays
 	// readable: the agents' tools trust it.
-	if err := os.Chmod(filepath.Join(dir, "_ca", "mitmproxy-ca.pem"), 0o600); err != nil {
+	caKey := filepath.Join(dir, "_ca", "mitmproxy-ca.pem")
+	if err := os.Chmod(caKey, 0o600); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("restrict the MITM CA key: %w", err)
+	}
+	// On Windows the mode above changes nothing; the server denies the agent account
+	// the key with an ACL here (server/execpriv_windows.go).
+	if RestrictCAKey != nil {
+		if err := RestrictCAKey(caKey); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("restrict the MITM CA key: %w", err)
+		}
 	}
 	// Upstream selection. By default (no global egress proxy set) targets are
 	// dialed DIRECTLY: go-mitmproxy's own default upstream uses
@@ -569,6 +578,11 @@ func ValidateProxyURL(raw string) (*url.URL, error) {
 	}
 	return u, nil
 }
+
+// RestrictCAKey, when set, further restricts the MITM CA key file once the proxy has
+// written it. The server sets it on Windows, where file modes do not restrict reads,
+// to deny the agent account the key.
+var RestrictCAKey func(path string) error
 
 // CACertPath returns the PEM CA cert clients must trust to verify HTTPS through
 // the MITM proxy (go-mitmproxy writes it here on first start).

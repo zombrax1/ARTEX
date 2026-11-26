@@ -98,6 +98,10 @@ func flagWasSet(name string) bool {
 }
 
 func run() int {
+	// "artex exec-account setup|status|remove": the Windows agent account.
+	if len(os.Args) > 1 && os.Args[1] == "exec-account" {
+		return server.RunExecAccountCommand(os.Args[2:])
+	}
 	var (
 		addr    = flag.String("addr", "127.0.0.1:8787", "HTTP listen address")
 		dataDir = flag.String("data", filepath.Join(config.BaseDir(), "data"), "runtime data directory: traffic index, task files, transcripts (default: data/ next to the executable)")
@@ -106,8 +110,10 @@ func run() int {
 		// A negative uid turns the drop off; 0 (root) is refused.
 		execUID = flag.Int("exec-uid", server.DefaultExecUID, "uid that agent processes run as (Bash, shell, custom tools, MCP stdio); -1 turns the drop off")
 		execGID = flag.Int("exec-gid", server.DefaultExecGID, "gid that agent processes run as")
+		// Windows: the separate local account agent processes run as.
+		execAccount = flag.String("exec-account", "", "Windows: local account that agent processes run as, set up with \"artex exec-account setup\"; empty uses the account set up in the key directory, \"-\" turns it off")
 		// Development escape of the isolation self-test, off by default.
-		devNoIsolation = flag.Bool(server.DevNoIsolationFlag, false, "DEVELOPMENT ONLY: on Linux as root, start even when the agent isolation self-test fails; agent processes and file tools may then read the server's keys, config and database credentials")
+		devNoIsolation = flag.Bool(server.DevNoIsolationFlag, false, "DEVELOPMENT ONLY: with agent isolation configured (Linux as root, or a Windows agent account), start even when the agent isolation self-test fails; agent processes and file tools may then read the server's keys, config and database credentials")
 	)
 	flag.Parse()
 
@@ -177,11 +183,18 @@ func run() int {
 
 	// Agent processes run as the executor identity, never as the server's root (see
 	// server/execpriv.go). An explicit option that cannot be applied stops the start.
-	priv, err := server.ResolveExecPrivilege(*execUID, *execGID, flagWasSet("exec-uid") || flagWasSet("exec-gid"))
+	// On Windows they run as a separate local account instead (server/execpriv_windows.go).
+	var priv server.ExecPrivilege
+	if runtime.GOOS == "windows" {
+		priv, err = server.ResolveExecAccount(*execAccount, keyDir, flagWasSet("exec-account"))
+	} else if _, err = server.ResolveExecAccount(*execAccount, keyDir, flagWasSet("exec-account")); err == nil {
+		priv, err = server.ResolveExecPrivilege(*execUID, *execGID, flagWasSet("exec-uid") || flagWasSet("exec-gid"))
+	}
 	if err != nil {
 		log.Printf("[config] %v", err)
 		return 1
 	}
+	priv.SkillDir = skillDir
 	if err := server.PrepareExecPrivilege(&priv, *dataDir, config.KeyDir(), config.Path()); err != nil {
 		log.Printf("[config] %v", err)
 		return 1

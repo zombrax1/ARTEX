@@ -116,6 +116,28 @@ jobs:
       # service, so parallel package runs delete each other's rows.
       - run: go test -p 1 ./...
 
+  # Windows agent isolation (docs/windows-agent-isolation.md). The runner is a
+  # disposable, elevated Windows host, so the end-to-end test creates a real local
+  # agent account and runs the startup self-test through the PowerShell shim.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./agent ./server ./traffic ./cmd/...
+      - name: secondary logon service
+        shell: pwsh
+        run: |
+          Set-Service seclogon -StartupType Manual
+          Start-Service seclogon
+      - name: agent account isolation
+        env:
+          ARTEX_WINDOWS_ACCOUNT_TEST: "1"
+        run: go test -count=1 -v -run Windows ./server ./agent
+
   govulncheck:
     runs-on: ubuntu-latest
     permissions:
