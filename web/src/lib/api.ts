@@ -21,6 +21,7 @@ import type {
   AssetInterceptRuleInput,
   TaskCredential,
   TaskCredentialInput,
+  AccessCheck,
   Audit,
   BatchCategoryItem,
   BatchControlItem,
@@ -344,6 +345,9 @@ export const api = {
   addTaskCredential: (id: string, input: TaskCredentialInput) =>
     post<TaskCredential>(`/tasks/${id}/credentials`, input),
   deleteTaskCredential: (id: string, cid: number) => del(`/tasks/${id}/credentials/${cid}`),
+  setTaskCredentialSession: (id: string, cid: number, authHeaders: string) =>
+    put<{ ok: boolean }>(`/tasks/${id}/credentials/${cid}/session`, { auth_headers: authHeaders }),
+  taskAccessChecks: (id: string) => get<AccessCheck[]>(`/tasks/${id}/access-checks`).then((r) => arr(r)),
   // Imported API definitions and per-operation coverage.
   taskAPICoverage: (id: string) => get<APICoverage>(`/tasks/${id}/api-definitions`),
   importAPIDefinition: (id: string, content: string, name = "") =>

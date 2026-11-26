@@ -3252,7 +3252,14 @@ function CreateTaskSheet({
           .map((r) => ({ ...r, pattern: r.pattern.trim() }))
           .filter((r) => r.pattern !== ""),
         credentials: credentials
-          .map((c) => ({ domain: c.domain.trim(), username: c.username.trim(), password: c.password, note: c.note?.trim() ?? "" }))
+          .map((c) => ({
+            domain: c.domain.trim(),
+            username: c.username.trim(),
+            password: c.password,
+            note: c.note?.trim() ?? "",
+            role: c.role?.trim() ?? "",
+            org: c.org?.trim() ?? "",
+          }))
           .filter((c) => c.domain !== "" && c.username !== ""),
       });
       toast.success(t("Task created"));
@@ -3471,7 +3478,17 @@ function CreateTaskSheet({
                       <TrashIcon />
                     </Button>
                     <Input
-                      className="sm:col-span-4"
+                      placeholder={t("role (optional, e.g. admin)")}
+                      value={c.role ?? ""}
+                      onChange={(e) => setCredentials((prev) => prev.map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))}
+                    />
+                    <Input
+                      placeholder={t("organisation (optional)")}
+                      value={c.org ?? ""}
+                      onChange={(e) => setCredentials((prev) => prev.map((x, j) => (j === i ? { ...x, org: e.target.value } : x)))}
+                    />
+                    <Input
+                      className="sm:col-span-2"
                       placeholder={t("note (optional, e.g. program alias account)")}
                       value={c.note ?? ""}
                       onChange={(e) => setCredentials((prev) => prev.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))}

@@ -10,7 +10,11 @@ import (
 // graph, assets, findings, goals). The target gate must find no target in
 // their input: an intent or a finding that mentions a URL is not a connection.
 // The gate scans every tool it does not know, so a domain tool added here has
-// to be added to the gate's list of tools without a target.
+// to be added to the gate's list of tools without a target. The exceptions are
+// the domain tools that connect to the target themselves (networkDomainTools):
+// the gate must read their targets.
+var networkDomainTools = map[string]bool{"compare_access": true}
+
 func TestDomainToolsDeclareNoTarget(t *testing.T) {
 	seeds := BuiltinToolSeeds()
 	if len(seeds) < 20 {
@@ -22,6 +26,12 @@ func TestDomainToolsDeclareNoTarget(t *testing.T) {
 		t.Fatal("control: the input names targets, and an unknown tool is scanned")
 	}
 	for _, seed := range seeds {
+		if networkDomainTools[seed.Key] {
+			if targets := intercept.ExtractTargets(seed.Key, input); len(targets) == 0 {
+				t.Errorf("%s connects to the target, but the gate reads no target from it", seed.Key)
+			}
+			continue
+		}
 		if targets := intercept.ExtractTargets(seed.Key, input); len(targets) != 0 {
 			t.Errorf("%s: the gate reads targets %+v from a domain tool", seed.Key, targets)
 		}

@@ -17,13 +17,16 @@ import (
 func (t *ToolSet) saveTaskCredential() actool.CoreTool {
 	return writeTool(
 		"save_task_credential",
-		"Record (or update) a test account for this task's target. ALWAYS call this immediately after registering an account on the target, with the exact username and password you chose, so the account is not lost. Also use it to update a known account whose password changed. Same (domain, username) is overwritten in place, not duplicated.\n"+
+		"Record (or update) a test account for this task's target, with its role, organisation and, after you log in, its session headers for compare_access. ALWAYS call this immediately after registering an account on the target, with the exact username and password you chose, so the account is not lost. Also use it to update a known account whose password changed. Same (domain, username) is overwritten in place, not duplicated.\n"+
 			"Returns: {id, domain, username, source}.",
 		obj(map[string]any{
-			"domain":   str("domain or host the account belongs to (e.g. target.example.com)"),
-			"username": str("login name / email used"),
-			"password": str("the exact password that was set — required"),
-			"note":     str("optional context, e.g. which registration flow created it"),
+			"domain":       str("domain or host the account belongs to (e.g. target.example.com)"),
+			"username":     str("login name / email used"),
+			"password":     str("the exact password that was set — required"),
+			"note":         str("optional context, e.g. which registration flow created it"),
+			"role":         str("optional role of the account, e.g. admin, member, viewer"),
+			"org":          str("optional organisation, tenant or workspace the account belongs to"),
+			"auth_headers": str("optional session headers of a logged-in request, one \"Name: value\" per line (e.g. \"Cookie: session=...\" or \"Authorization: Bearer ...\"); compare_access replays requests with them. Empty keeps the saved headers."),
 		}, "domain", "username", "password"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
@@ -31,6 +34,9 @@ func (t *ToolSet) saveTaskCredential() actool.CoreTool {
 				Username string `json:"username"`
 				Password string `json:"password"`
 				Note     string `json:"note"`
+				Role     string `json:"role"`
+				Org      string `json:"org"`
+				Headers  string `json:"auth_headers"`
 			}
 			if err := json.Unmarshal(in, &a); err != nil {
 				return actool.Errorf("invalid input: " + err.Error()), nil
@@ -49,13 +55,14 @@ func (t *ToolSet) saveTaskCredential() actool.CoreTool {
 			}
 			c, err := t.ts.UpsertTaskCredential(taskID, db.TaskCredentialInput{
 				Domain: a.Domain, Username: a.Username, Password: a.Password,
-				Source: "agent", Note: a.Note,
+				Source: "agent", Note: a.Note, Role: a.Role, Org: a.Org, AuthHeaders: a.Headers,
 			})
 			if err != nil {
 				return actool.Errorf("save_task_credential failed: " + err.Error()), nil
 			}
 			return jsonResult(map[string]any{
 				"id": c.ID, "domain": c.Domain, "username": c.Username, "source": c.Source,
+				"role": c.Role, "org": c.Org, "session_headers": c.AuthHeaders != "",
 			})
 		})
 }
@@ -82,7 +89,22 @@ func (t *ToolSet) listTaskCredentials() actool.CoreTool {
 			if err != nil {
 				return actool.Errorf("list_task_credentials failed: " + err.Error()), nil
 			}
-			return jsonResult(map[string]any{"credentials": list})
+			// Session headers stay out of the model's context: compare_access
+			// reads them server-side.
+			out := make([]map[string]any, 0, len(list))
+			for _, c := range list {
+				m := map[string]any{"id": c.ID, "domain": c.Domain, "username": c.Username, "password": c.Password, "source": c.Source}
+				for k, v := range map[string]string{"note": c.Note, "role": c.Role, "org": c.Org} {
+					if v != "" {
+						m[k] = v
+					}
+				}
+				if c.AuthHeaders != "" {
+					m["session_headers"] = true
+				}
+				out = append(out, m)
+			}
+			return jsonResult(map[string]any{"credentials": out})
 		})
 }
 
@@ -100,12 +122,22 @@ func (t *ToolSet) taskCredentialOverview() []map[string]any {
 	out := make([]map[string]any, 0, len(list))
 	for _, c := range list {
 		m := map[string]any{
+			"id":       c.ID,
 			"domain":   c.Domain,
 			"username": c.Username,
 			"source":   c.Source,
 		}
 		if c.Note != "" {
 			m["note"] = c.Note
+		}
+		if c.Role != "" {
+			m["role"] = c.Role
+		}
+		if c.Org != "" {
+			m["org"] = c.Org
+		}
+		if c.AuthHeaders != "" {
+			m["session_headers"] = true
 		}
 		if c.Password == "" {
 			m["instruction"] = "no password yet: register an account with this username on this domain (choose a strong unique password), then record it via save_task_credential"
