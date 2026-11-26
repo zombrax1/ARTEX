@@ -678,7 +678,7 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 	if hooks != nil { // typed-nil guard: only set when concrete (avoids harness panic)
 		opts.Hooks = hooks
 	}
-	opts.Hooks = SpillHooks(MissingToolHooks(opts.Hooks), opts.ToolOutputDir)
+	opts.Hooks = SpillHooks(RepeatGuardHooks(MissingToolHooks(opts.Hooks)), opts.ToolOutputDir)
 	// The session id is the provider-side identity (session header, usage metering)
 	// with or without persistence; Norma only puts it on ctx when it writes a transcript.
 	opts.SessionID = WorkerSessionID(ts.ID(), intent.ID)

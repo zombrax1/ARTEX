@@ -1066,6 +1066,16 @@ export interface Settings {
   notify_assets_max_shown?: number; // asset names listed per finding, 0-50, default 3
   // Target noise profile; the stored setting wins over ARTEX_NOISE_PROFILE. Applies to the next request.
   noise_profile?: NoiseProfileName;
+  // Repeated-failure detection limits (0 = that check off); applies to runs started afterwards.
+  repeat_guard?: RepeatGuardLimits;
+}
+
+export interface RepeatGuardLimits {
+  enabled: boolean;
+  fail_repeats: number; // identical failing calls before the next is refused
+  identical_repeats: number; // identical successful calls in a row before the next is refused
+  failure_streak: number; // failed calls in a row (any) before a change of direction is forced
+  stop_after: number; // refusals before the run is told to wrap up
 }
 
 export type NoiseProfileName = "off" | "quiet" | "balanced" | "aggressive";
@@ -1302,6 +1312,33 @@ export interface LLMQueueStat {
 
 export interface LLMQueueStatus {
   profiles: Record<string, LLMQueueStat>;
+}
+
+// Load of the machine running ARTEX (GET /api/system/metrics). A value the host
+// cannot report is null; gpus is empty when no nvidia-smi or rocm-smi answered.
+export interface SystemMetricValue {
+  used_bytes?: number;
+  total_bytes?: number;
+  percent: number;
+}
+
+export interface SystemGPUMetric {
+  index: number;
+  name: string;
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  memory_percent: number;
+  util_percent?: number;
+}
+
+export interface SystemMetrics {
+  timestamp: string;
+  cpu: SystemMetricValue | null;
+  memory: SystemMetricValue | null;
+  disk: SystemMetricValue | null;
+  disk_path?: string;
+  gpus: SystemGPUMetric[];
+  gpu_source?: string;
 }
 
 export interface LLMPoolStatus {

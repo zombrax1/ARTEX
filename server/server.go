@@ -62,6 +62,8 @@ type Server struct {
 
 	setupMu sync.Mutex
 
+	// sysMetrics samples CPU, memory, disk and GPU use for the dashboard.
+	sysMetrics *systemMetricsCollector
 	// mcpStoreOverride replaces the database behind /mcp in tests.
 	mcpStoreOverride mcpStore
 	setupToken       string // one-time token POST /api/auth/init requires; empty when none is active
@@ -212,7 +214,8 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		provByProfile:  map[int64]*provEntry{},
 		llmGates:       map[int64]*llmgate.Gate{},
 		taskAgents:     map[string]*taskAgentBundle{}, archiveWake: make(chan struct{}, 1),
-		loginLimit: newLoginLimiter(time.Now), pwdLimit: newLoginLimiter(time.Now)}
+		loginLimit: newLoginLimiter(time.Now), pwdLimit: newLoginLimiter(time.Now),
+		sysMetrics: newSystemMetricsCollector(dataDir)}
 	s.llmHealth, s.llmHealthSync = newLLMHealthRegistry(ctx, m.pg)
 	for _, o := range opts {
 		o(s)
@@ -223,6 +226,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	// Circuit-breaker thresholds/cooldowns are hot parameters on the failure path; push the global retry policy to the Registry once at startup,
 	// and again on every policy save (saveLLMRetryPolicy).
 	s.applyRetryPolicy()
+	s.installRepeatGuard()
 	// Every task uses a stable task router. An empty explicit chain is resolved by
 	// that router through Agent bindings and then the global provider, so adding a
 	// first chain to a running task takes effect on its very next LLM call.
@@ -1121,7 +1125,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/llm/retry-policy", s.pgGetLLMRetryPolicy)
 	mux.HandleFunc("POST /api/llm/retry-policy", s.pgSaveLLMRetryPolicy)
 	mux.HandleFunc("GET /api/llm/pool", s.pgLLMPoolStatus)
-	mux.HandleFunc("GET /api/llm/queue", s.llmQueue) // live per-profile in-flight / queued request counts
+	mux.HandleFunc("GET /api/llm/queue", s.llmQueue)           // live per-profile in-flight / queued request counts
+	mux.HandleFunc("GET /api/system/metrics", s.systemMetrics) // CPU, memory, data disk and GPU memory of this host
 	mux.HandleFunc("POST /api/llm/pool/reset", s.pgLLMPoolReset)
 	mux.HandleFunc("POST /api/llm/models", s.pgListModels)
 
@@ -4049,6 +4054,8 @@ func (s *Server) settingsPayload() map[string]any {
 		"notify_assets_max_shown":  limits.AssetsShown,
 		// Effective target noise profile (off by default): the stored setting, else ARTEX_NOISE_PROFILE.
 		"noise_profile": egress.CurrentProfile().Name,
+		// Repeated-failure detection limits (0 = that check off); read per agent run.
+		"repeat_guard": repeatGuardLimits(s.m.pg),
 	}
 }
 
@@ -4136,6 +4143,8 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		NotifyAssetsMaxShown  *int `json:"notify_assets_max_shown"`
 		// Target noise profile: off|quiet|balanced|aggressive; null = unchanged. Applies to the next request, no agent rebuild.
 		NoiseProfile *string `json:"noise_profile"`
+		// Repeated-failure detection limits; any subset of the fields, null = unchanged. Applies to runs started afterwards.
+		RepeatGuard json.RawMessage `json:"repeat_guard"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -4258,6 +4267,12 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := s.m.pg.SetSetting(settingNotifyAssetsMaxShown, strconv.Itoa(*req.NotifyAssetsMaxShown)); err != nil {
 			writeErr(w, 500, err.Error())
+			return
+		}
+	}
+	if len(req.RepeatGuard) > 0 && string(req.RepeatGuard) != "null" {
+		if _, err := setRepeatGuardLimits(s.m.pg, req.RepeatGuard); err != nil {
+			writeErr(w, 400, "repeat_guard: "+err.Error())
 			return
 		}
 	}

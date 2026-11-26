@@ -60,6 +60,7 @@ import type {
   JudgeUsage,
   LLMPoolStatus,
   LLMQueueStatus,
+  SystemMetrics,
   OllamaModelInfo,
   LLMProfile,
   LLMRecordDetail,
@@ -1203,6 +1204,8 @@ export const api = {
   // The pool chain's actual order + each profile's breaker state.
   llmPool: () => get<LLMPoolStatus>("/llm/pool"),
   llmQueue: () => get<LLMQueueStatus>("/llm/queue"),
+  // CPU, memory, data disk and GPU memory of the machine running ARTEX.
+  systemMetrics: () => get<SystemMetrics>("/system/metrics"),
   // Clear the breaker so the next call retries this profile immediately; no id = clear all.
   resetLLMPool: (id?: string) => post<LLMPoolStatus>("/llm/pool/reset", { id: id ? Number(id) : 0 }),
   // Global retry policy (count + interval for each of the five layers). All zeros = built-in defaults everywhere.

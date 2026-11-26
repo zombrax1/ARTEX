@@ -48,6 +48,7 @@ import { cn } from "@/lib/utils";
 import { intlLocale, t } from "@/i18n";
 import { api } from "@/lib/api";
 import type { LLMRecordItem, LLMRecordDetail, LLMTask } from "@/lib/types";
+import { formatTokens as fmtTokens } from "@/lib/format-tokens";
 
 function fmtTime(ts: string) {
   return new Date(ts).toLocaleString(intlLocale, {
@@ -62,11 +63,6 @@ function fmtTime(ts: string) {
 function fmtLatency(ms: number) {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function fmtTokens(n: number) {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
 }
 
 function tryFormatJSON(s: string): string {

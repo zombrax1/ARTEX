@@ -71,6 +71,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { setVisibleInterval } from "@/lib/polling";
 import { intlLocale, t } from "@/i18n";
+import { formatTokens as fmtTokens } from "@/lib/format-tokens";
 
 // resolutionLabel names the LLM a session runs on. The badge shows this alone and
 // keeps the model id in its tooltip. Env-backed configs can arrive without a name,
@@ -195,13 +196,6 @@ function statusIcon(status: SessionStatus) {
     case "deleted": // soft-deleted by the user
       return <CircleSlashIcon className="size-3.5 text-muted-foreground" />;
   }
-}
-
-// fmtTokens renders a compact token count (1234 → 1.2k, 2_000_000 → 2M).
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
-  return String(n);
 }
 
 const TokenMetrics = React.forwardRef<
