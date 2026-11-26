@@ -1512,15 +1512,55 @@ export type TaskCredentialInput = {
   username: string;
   password: string;
   note?: string;
+  role?: string;
+  org?: string;
+  // Session headers ("Name: value" per line). Write-only: reads return auth_headers_set.
+  auth_headers?: string;
 };
 
-export type TaskCredential = TaskCredentialInput & {
+export type TaskCredential = Omit<TaskCredentialInput, "auth_headers"> & {
   id: number;
   task_id: number;
   source: "user" | "agent";
   note: string;
+  role: string;
+  org: string;
+  auth_headers_set: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type AccessResult = {
+  credential_id: number | null;
+  account: string;
+  role?: string;
+  org?: string;
+  status: number;
+  length: number;
+  body_hash?: string;
+  snippet?: string;
+  error?: string;
+};
+
+export type AccessFlagKind = "unauthenticated_access" | "cross_org_access" | "cross_role_access" | "cross_user_access";
+
+export type AccessFlag = {
+  kind: AccessFlagKind;
+  account: string;
+  match: "identical" | "similar";
+  detail: string;
+};
+
+export type AccessCheck = {
+  id: number;
+  task_id: number;
+  method: string;
+  url: string;
+  owner_id?: number | null;
+  results: AccessResult[];
+  flags: AccessFlag[];
+  checked_by?: string;
+  created_at: string;
 };
 
 
