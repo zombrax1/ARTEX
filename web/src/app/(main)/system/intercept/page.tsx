@@ -61,13 +61,7 @@ import type {
   LLMProfile,
   Tool,
 } from "@/lib/types";
-
-// fmtTokens compacts token counts (1.2k / 3.4M) for approval usage stats.
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
-  return String(n);
-}
+import { formatTokens as fmtTokens } from "@/lib/format-tokens";
 
 // tRich translates a sentence whose {placeholders} are rendered as React nodes (e.g. emphasised spans or code).
 function tRich(key: string, nodes: Record<string, React.ReactNode>): React.ReactNode[] {
