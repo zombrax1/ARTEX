@@ -757,6 +757,30 @@ For a recurring problem, share the ARTEX version or commit, the model and versio
 excerpt of the affected input and result. Remove credentials, target data, and other sensitive
 content before sharing.
 
+### Using ARTEX from another agent (MCP server)
+
+ARTEX can act as an MCP server, so an outside agent or MCP client (Claude Code, Claude Desktop,
+another agent) can list tasks, read findings and their evidence, start tasks, and pause, resume or
+steer them. It is **off by default**.
+
+1. In **System → Settings → ARTEX as an MCP server**, turn the switch on.
+2. Create an access token. Pick its scopes: **Read** (tasks, findings, graphs, worker traces, LLM
+   profiles), **Create tasks** (`spawn_task`) and **Control tasks** (`pause_task`, `resume_task`,
+   `add_task_hint`). Copy it: it is shown once and stored only as a SHA-256 hash.
+3. Point the client at `http(s)://<your ARTEX host>/mcp` (Streamable HTTP) with the header
+   `Authorization: Bearer <token>`. For Claude Code:
+
+   ```bash
+   claude mcp add --transport http artex http://127.0.0.1:8787/mcp --header "Authorization: Bearer artex_mcp_…"
+   ```
+
+The endpoint accepts only these access tokens, not the console login, and refuses requests from
+a browser page on another origin. Nothing that changes settings, tools, skills, agents, MCP
+servers, workspace files or LLM profiles is exposed. Every tool call, refused ones included, is
+listed under **Recent MCP calls** (the newest 5,000 are kept). Revoke a token to stop it at once.
+Tasks started this way are normal tasks: they follow the concurrency and LLM settings, and only
+target systems you are authorized to test.
+
 ### Backups
 
 `scripts/backup.sh` dumps the Postgres database (and optionally the data directory) with
@@ -972,6 +996,8 @@ Operational security properties:
 - **Login protection**: 10 attempts per minute per client IP, with `ARTEX_TRUSTED_PROXIES` for
   correct client attribution behind a reverse proxy.
 - **Untrusted tool output**: framed as data for every agent by default (prompt-injection boundary).
+- **MCP server endpoint** (`/mcp`): off by default; scoped access tokens stored as SHA-256,
+  a fixed tool allowlist and an audit log of every call.
 - **Release integrity**: SHA-256 sums, CycloneDX SBOM and GitHub build provenance attestations for
   release archives.
 
