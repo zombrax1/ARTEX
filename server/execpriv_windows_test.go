@@ -191,7 +191,7 @@ func TestWindowsAgentAccountIsolation(t *testing.T) {
 				t.Errorf("a server variable reached the shell:\n%s", out)
 			}
 			if _, err := os.Stat(filepath.Join(run, "out.txt")); err != nil {
-				t.Errorf("the shell could not write its run directory: %v", err)
+				t.Errorf("the shell could not write its run directory: %v\n%s", err, out)
 			}
 			c = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "Get-Content -LiteralPath "+psQuote(filepath.Join(f.keyDir, "jwt.key")))
 			c.Dir = run
