@@ -2538,6 +2538,28 @@ func newModelURLGuard(s *Server) *modelURLGuard {
 	}
 }
 
+// allowSavedEndpoint adds the exact host:port of a stored profile URL to this
+// request's private allow-list, with the same limits as an
+// ARTEX_LLM_PRIVATE_ENDPOINTS entry. An unparsable URL adds nothing.
+func (g *modelURLGuard) allowSavedEndpoint(rawURL string) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Opaque != "" {
+		return
+	}
+	port, ok := urlEffectivePort(u)
+	if !ok {
+		return
+	}
+	_, normHost, ok := normalizeModelHost(u.Hostname())
+	if !ok {
+		return
+	}
+	if g.privateEndpoints == nil {
+		g.privateEndpoints = map[string]bool{}
+	}
+	g.privateEndpoints[net.JoinHostPort(normHost, strconv.Itoa(port))] = true
+}
+
 func (g *modelURLGuard) allowDialAddr(addr netip.Addr, port int) {
 	if !addr.IsValid() || port < 1 || port > 65535 {
 		return
@@ -2653,26 +2675,34 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": false, "error": "enter the Bedrock model ID manually; this gateway has no model-list endpoint"})
 		return
 	}
+	var stored *db.LLMProfile
+	if req.ProfileID != nil && s.m != nil && s.m.pg != nil {
+		if p, err := s.m.pg.ProfileByID(*req.ProfileID); err == nil && p != nil {
+			stored = p
+		}
+	}
+	// The request targets the endpoint this stored profile was saved for.
+	savedEndpoint := stored != nil && sameLLMEndpoint(req.Provider, req.BaseURL, stored.Format, stored.BaseURL)
 	// Resolve API key: form input > profile stored key. The stored key is only
 	// sent to the endpoint it was saved for, since base_url comes from the form.
 	apiKey := strings.TrimSpace(req.APIKey)
 	withheld := false
-	if apiKey == "" && req.ProfileID != nil {
-		if p, err := s.m.pg.ProfileByID(*req.ProfileID); err == nil && p != nil {
-			if sameLLMEndpoint(req.Provider, req.BaseURL, p.Format, p.BaseURL) {
-				apiKey = p.APIKey
-			} else {
-				withheld = p.APIKey != ""
-			}
+	if apiKey == "" && stored != nil {
+		if savedEndpoint {
+			apiKey = strings.TrimSpace(stored.APIKey)
+		} else {
+			withheld = stored.APIKey != ""
 		}
 	}
+	savedProxy := false
 	if isMaskedSecret(req.Proxy) { // the form echoes the masked proxy: use the stored one
 		req.Proxy = ""
-		if req.ProfileID != nil {
-			if p, err := s.m.pg.ProfileByID(*req.ProfileID); err == nil && p != nil {
-				req.Proxy = p.Proxy
-			}
+		if stored != nil {
+			req.Proxy = stored.Proxy
+			savedProxy = true
 		}
+	} else if stored != nil && strings.TrimSpace(req.Proxy) != "" && strings.TrimSpace(req.Proxy) == strings.TrimSpace(stored.Proxy) {
+		savedProxy = true
 	}
 	provider := strings.TrimSpace(req.Provider)
 	// Ollama serves its model list keyless on the local server: no key gate.
@@ -2755,6 +2785,20 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 	// Pre-request validation is required in addition to the dial-time guard
 	// because a caller-supplied HTTP proxy fetches the target URL itself.
 	guard := newModelURLGuard(s)
+	// A saved profile's own endpoint (and its saved proxy) is reached by every
+	// connection test and every conversation on that profile, so listing its
+	// models may reach it too even when it is a local or LAN server (a local
+	// Ollama, vLLM, LM Studio, llama.cpp or Unsloth server behind the OpenAI
+	// format). It is treated like an ARTEX_LLM_PRIVATE_ENDPOINTS entry for this
+	// request only: loopback and private addresses are allowed for that exact
+	// host:port, link-local and metadata addresses stay blocked, and any other
+	// host (a form-typed URL, a redirect elsewhere) keeps the strict policy.
+	if savedEndpoint && strings.TrimSpace(stored.BaseURL) != "" {
+		guard.allowSavedEndpoint(stored.BaseURL)
+	}
+	if savedProxy {
+		guard.allowSavedEndpoint(stored.Proxy)
+	}
 	var proxyURL *url.URL
 	if p := strings.TrimSpace(req.Proxy); p != "" {
 		var err error

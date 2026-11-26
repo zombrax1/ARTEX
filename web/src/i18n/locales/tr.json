@@ -967,6 +967,7 @@
   "Failed to load messages: {error}": "Mesajlar yüklenemedi: {error}",
   "Failed to load model fallback config: {error}": "Model yedek onay yapılandırması yüklenemedi: {error}",
   "Failed to load models: {error}": "Modeller yüklenemedi: {error}",
+  "A local or private server is listed only after its profile is saved. Type the model name now, or save the profile and load the models again.": "Yerel veya özel bir sunucu yalnızca profili kaydedildikten sonra listelenir. Model adını şimdi yazın veya profili kaydedip modelleri yeniden yükleyin.",
   "Failed to load notification settings: {error}": "Bildirim ayarları yüklenemedi: {error}",
   "Failed to load pending approvals: {error}. Click Refresh to retry.": "Bekleyen onaylar yüklenemedi: {error}. Yeniden denemek için Yenile'ye tıklayın.",
   "Failed to load records: {error}. Click Refresh to retry.": "Kayıtlar yüklenemedi: {error}. Yeniden denemek için Yenile'ye tıklayın.",

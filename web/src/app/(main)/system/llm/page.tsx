@@ -436,7 +436,13 @@ function ProfileSheet({
         setModelsOpen(true);
         toast.success(t("Loaded {count} models", { count: r.models.length }));
       } else {
-        toast.error(t("Failed to load models: {error}", { error: r.error ?? t("no models returned") }));
+        // A local or LAN server is only listed for its saved profile: say how to get the list instead of a bare refusal.
+        const localRefused = !profileId && r.error === "endpoint URL host is not allowed";
+        toast.error(t("Failed to load models: {error}", { error: r.error ?? t("no models returned") }), {
+          description: localRefused
+            ? t("A local or private server is listed only after its profile is saved. Type the model name now, or save the profile and load the models again.")
+            : undefined,
+        });
       }
     } catch (e) {
       toast.error(t("Error loading models: {error}", { error: (e as Error).message }));

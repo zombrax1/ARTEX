@@ -967,6 +967,7 @@
   "Failed to load messages: {error}": "加载消息失败：{error}",
   "Failed to load model fallback config: {error}": "加载模型回退配置失败：{error}",
   "Failed to load models: {error}": "加载模型失败：{error}",
+  "A local or private server is listed only after its profile is saved. Type the model name now, or save the profile and load the models again.": "本地或私有服务器只有在配置保存后才能列出模型。现在可以直接输入模型名称，或者先保存配置再重新加载模型。",
   "Failed to load notification settings: {error}": "加载通知设置失败：{error}",
   "Failed to load pending approvals: {error}. Click Refresh to retry.": "加载待审批请求失败：{error}。点击刷新重试。",
   "Failed to load records: {error}. Click Refresh to retry.": "记录加载失败：{error}。请点击刷新重试。",
