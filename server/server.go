@@ -60,7 +60,10 @@ type Server struct {
 	execPriv  ExecPrivilege   // identity agent processes run under; zero keeps the server's own
 	isolation IsolationStatus // result of the startup isolation self-test (isolation.go); zero when not run
 
-	setupMu    sync.Mutex
+	setupMu sync.Mutex
+
+	// sysMetrics samples CPU, memory, disk and GPU use for the dashboard.
+	sysMetrics *systemMetricsCollector
 	setupToken string // one-time token POST /api/auth/init requires; empty when none is active
 	// pwdVersion is auth.password_version, a counter. Zero means no password
 	// change is stored yet, and any valid token is accepted. pwdState is
@@ -209,7 +212,8 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		provByProfile:  map[int64]*provEntry{},
 		llmGates:       map[int64]*llmgate.Gate{},
 		taskAgents:     map[string]*taskAgentBundle{}, archiveWake: make(chan struct{}, 1),
-		loginLimit: newLoginLimiter(time.Now), pwdLimit: newLoginLimiter(time.Now)}
+		loginLimit: newLoginLimiter(time.Now), pwdLimit: newLoginLimiter(time.Now),
+		sysMetrics: newSystemMetricsCollector(dataDir)}
 	s.llmHealth, s.llmHealthSync = newLLMHealthRegistry(ctx, m.pg)
 	for _, o := range opts {
 		o(s)
@@ -1111,7 +1115,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/llm/retry-policy", s.pgGetLLMRetryPolicy)
 	mux.HandleFunc("POST /api/llm/retry-policy", s.pgSaveLLMRetryPolicy)
 	mux.HandleFunc("GET /api/llm/pool", s.pgLLMPoolStatus)
-	mux.HandleFunc("GET /api/llm/queue", s.llmQueue) // live per-profile in-flight / queued request counts
+	mux.HandleFunc("GET /api/llm/queue", s.llmQueue)           // live per-profile in-flight / queued request counts
+	mux.HandleFunc("GET /api/system/metrics", s.systemMetrics) // CPU, memory, data disk and GPU memory of this host
 	mux.HandleFunc("POST /api/llm/pool/reset", s.pgLLMPoolReset)
 	mux.HandleFunc("POST /api/llm/models", s.pgListModels)
 

@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { t } from "@/i18n";
 import { setVisibleInterval } from "@/lib/polling";
 import { useActiveCompany } from "@/stores/company/company-store";
+import { SystemResources } from "./_components/system-resources";
 import { formatTokens as fmtTokens } from "@/lib/format-tokens";
 
 // ── chart constants ───────────────────────────────────────────────────────────
@@ -501,6 +502,9 @@ export default function DashboardPage() {
           <p className="text-xs text-muted-foreground">{t("System-wide status · live refresh")}</p>
         </div>
       </div>
+
+      {/* ── Load of the machine running ARTEX ── */}
+      <SystemResources />
 
       {/* ── Row 1: 5 stat cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

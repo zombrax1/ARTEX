@@ -2306,6 +2306,15 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/llm/profiles/active") return { ok: true };
   if (path === "/llm/pool" && m === "GET") return D.llmPool;
   if (path === "/llm/queue" && m === "GET") return { profiles: {} };
+  if (path === "/system/metrics" && m === "GET")
+    return {
+      timestamp: new Date().toISOString(),
+      cpu: { percent: 23.5 },
+      memory: { used_bytes: 9.2 * 1024 ** 3, total_bytes: 32 * 1024 ** 3, percent: 28.75 },
+      disk: { used_bytes: 310 * 1024 ** 3, total_bytes: 1000 * 1024 ** 3, percent: 31 },
+      gpus: [{ index: 0, name: "Demo GPU", memory_used_bytes: 6 * 1024 ** 3, memory_total_bytes: 16 * 1024 ** 3, memory_percent: 37.5, util_percent: 41 }],
+      gpu_source: "nvidia-smi",
+    };
   if (path === "/llm/pool/reset")
     return { ...D.llmPool, chain: D.llmPool.chain.map((c) => ({ ...c, state: "ok", fails: 0, cooldown_secs: 0 })) };
   if (seg[0] === "llm" && seg[1] === "profiles" && seg.length === 3 && m === "DELETE")

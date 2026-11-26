@@ -2735,5 +2735,14 @@
   "This model does not support tool calls. ARTEX agents work only through tools, so tasks on this profile will not make progress. Pick a model marked with tool support.": "此模型不支持工具调用。ARTEX 智能体只能通过工具工作，因此使用此配置的任务将无法推进。请选择支持工具的模型。",
   "{size} GB": "{size} GB",
   "This model cannot call tools, so ARTEX agents cannot use it": "此模型无法调用工具，ARTEX 智能体无法使用它",
-  "no tools": "无工具"
+  "no tools": "无工具",
+  "This machine": "本机",
+  "Not updating": "未更新",
+  "CPU": "CPU",
+  "Memory": "内存",
+  "Data disk": "数据磁盘",
+  "{used} of {total}": "{used} / {total}",
+  "GPU {index} memory · {name}": "GPU {index} 显存 · {name}",
+  "GPU {index} busy {percent}%": "GPU {index} 占用 {percent}%",
+  "No GPU reported (needs nvidia-smi or rocm-smi)": "未检测到 GPU（需要 nvidia-smi 或 rocm-smi）"
 }

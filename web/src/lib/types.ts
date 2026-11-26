@@ -1269,6 +1269,33 @@ export interface LLMQueueStatus {
   profiles: Record<string, LLMQueueStat>;
 }
 
+// Load of the machine running ARTEX (GET /api/system/metrics). A value the host
+// cannot report is null; gpus is empty when no nvidia-smi or rocm-smi answered.
+export interface SystemMetricValue {
+  used_bytes?: number;
+  total_bytes?: number;
+  percent: number;
+}
+
+export interface SystemGPUMetric {
+  index: number;
+  name: string;
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  memory_percent: number;
+  util_percent?: number;
+}
+
+export interface SystemMetrics {
+  timestamp: string;
+  cpu: SystemMetricValue | null;
+  memory: SystemMetricValue | null;
+  disk: SystemMetricValue | null;
+  disk_path?: string;
+  gpus: SystemGPUMetric[];
+  gpu_source?: string;
+}
+
 export interface LLMPoolStatus {
   enabled: boolean;
   bind_fallback: boolean;
