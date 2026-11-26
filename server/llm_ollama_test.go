@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -229,7 +230,16 @@ func TestOllamaListModels(t *testing.T) {
 	if !ok2 || len(models2) != 2 {
 		t.Fatalf("listing without /v1 base failed: ok=%v models=%v", ok2, models2)
 	}
-	if paths, _ := calls.Load().([]string); len(paths) != 2 || paths[0] != "/v1/models" || paths[1] != "/v1/models" {
+	// Each listing also reads Ollama's native /api/tags (and /api/show per model)
+	// for the tool-support details, so count only the OpenAI-compatible calls.
+	var openAI []string
+	paths, _ := calls.Load().([]string)
+	for _, p := range paths {
+		if strings.HasSuffix(p, "/models") {
+			openAI = append(openAI, p)
+		}
+	}
+	if len(openAI) != 2 || openAI[0] != "/v1/models" || openAI[1] != "/v1/models" {
 		t.Fatalf("both calls must hit /v1/models, got %v", paths)
 	}
 }
