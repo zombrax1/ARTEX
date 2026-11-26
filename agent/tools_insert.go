@@ -703,6 +703,8 @@ func (t *ToolSet) WorkerTools() []actool.CoreTool {
 		t.saveTaskCredential(), t.listTaskCredentials(),
 		// Imported API definitions: untested operations and manual coverage marks.
 		t.listAPIOperations(), t.markAPIOperation(),
+		// Multiple-account testing: replay one request as every test account.
+		t.compareAccess(),
 		// Cross-work review: a worker can also reuse other works' observations to avoid
 		// duplicate work.
 		// search_all_worker_traces: no need to know an intent_id first — fish out matching

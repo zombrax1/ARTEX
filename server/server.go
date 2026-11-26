@@ -227,6 +227,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	// and again on every policy save (saveLLMRetryPolicy).
 	s.applyRetryPolicy()
 	s.installAPICoverage()
+	s.installAccessChecks()
 	s.installRepeatGuard()
 	// Every task uses a stable task router. An empty explicit chain is resolved by
 	// that router through Agent bindings and then the global provider, so adding a
@@ -903,6 +904,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/{id}/api-definitions", s.importAPIDefinition)
 	mux.HandleFunc("DELETE /api/tasks/{id}/api-definitions/{did}", s.deleteAPIDefinition)
 	mux.HandleFunc("PUT /api/tasks/{id}/api-operations/{oid}", s.markAPIOperation)
+	mux.HandleFunc("PUT /api/tasks/{id}/credentials/{cid}/session", s.setTaskCredentialSession)
+	mux.HandleFunc("GET /api/tasks/{id}/access-checks", s.listAccessChecks)
 	mux.HandleFunc("POST /api/tasks/{id}/archive", s.queueTaskArchive)
 	mux.HandleFunc("POST /api/tasks/archive/batch", s.queueTaskArchivesBatch)
 	mux.HandleFunc("POST /api/task-archives/{id}/restore", s.queueTaskArchiveRestore)
@@ -1883,6 +1886,11 @@ type taskCredentialReq struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Note     string `json:"note"`
+	Role     string `json:"role"`
+	Org      string `json:"org"`
+	// AuthHeaders: session headers, one "Name: value" per line. Write-only: the
+	// API returns auth_headers_set, never the values.
+	AuthHeaders string `json:"auth_headers"`
 }
 
 func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
@@ -1967,7 +1975,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		for _, c := range req.Credentials {
 			if _, err := s.m.PG().UpsertTaskCredential(taskNum, db.TaskCredentialInput{
 				Domain: c.Domain, Username: c.Username, Password: c.Password,
-				Source: "user", Note: c.Note,
+				Source: "user", Note: c.Note, Role: c.Role, Org: c.Org, AuthHeaders: c.AuthHeaders,
 			}); err != nil {
 				writeErr(w, 400, "invalid credential for "+c.Domain+": "+err.Error())
 				return

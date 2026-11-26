@@ -551,6 +551,7 @@ func (s *Server) seedOrchestrationTools() {
 		_ = s.m.PG().SeedTool(t.Name(), t.Description(), schema, bindings)
 	}
 	s.refreshBuiltinToolSchemas()
+	s.refreshCredentialToolSchema()
 	s.seedAutoDefaultBindings()
 	s.seedPlannerDefaultBindings()
 	s.seedPlannerListAssetsBinding()
@@ -691,6 +692,28 @@ func (s *Server) refreshBuiltinToolSchemas() {
 	}
 	_ = s.m.pg.SetSetting(flag, "true")
 	log.Printf("[tools] refreshed orchestration/platform tool schemas to code defaults (one-time)")
+}
+
+// refreshCredentialToolSchema brings save_task_credential's stored schema and
+// description up to the code default ONCE, so databases seeded before
+// multiple-account testing get the role, org and auth_headers parameters
+// (SeedTool is first-insert-only). Bindings and the enabled flag are kept.
+func (s *Server) refreshCredentialToolSchema() {
+	const flag = "tool_schema_refresh_save_task_credential_v2"
+	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
+		return
+	}
+	for _, sd := range agent.BuiltinToolSeeds() {
+		if sd.Key != "save_task_credential" {
+			continue
+		}
+		schema, _ := json.Marshal(sd.Schema)
+		if err := s.m.pg.RefreshToolDefaults(sd.Key, sd.Desc, schema); err != nil {
+			log.Printf("[tools] refresh %s schema failed: %v", sd.Key, err)
+			return // flag not set; retried on next startup
+		}
+	}
+	_ = s.m.pg.SetSetting(flag, "true")
 }
 
 // unbindGoalMetDefault removes goal_met's default "planner" binding ONCE (guarded by

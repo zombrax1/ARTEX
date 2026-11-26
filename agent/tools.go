@@ -727,7 +727,7 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 	// this run registers get saved back (see save_task_credential).
 	if creds := t.taskCredentialOverview(); creds != nil {
 		out["task_credentials"] = creds
-		out["task_credentials_note"] = "test accounts for this task; use the matching entry for authenticated testing instead of registering a new account; entries with an empty password mean you must register that account first (strong unique password) and record it via save_task_credential; ALWAYS record accounts you register via save_task_credential"
+		out["task_credentials_note"] = "test accounts for this task; use the matching entry for authenticated testing instead of registering a new account; entries with an empty password mean you must register that account first (strong unique password) and record it via save_task_credential; ALWAYS record accounts you register via save_task_credential; when the task has accounts with different roles or organisations, save each one's session headers after logging in and use compare_access on endpoints that return per-account data"
 	}
 	if api := t.apiOperationsOverview(); api != nil {
 		out["api_operations"] = api
