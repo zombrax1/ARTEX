@@ -1,0 +1,138 @@
+package apidef
+
+import (
+	"strings"
+	"testing"
+)
+
+const openapiYAML = `
+openapi: 3.0.3
+info: {title: Shop}
+servers:
+  - url: https://{env}.shop.example/api/v1
+    variables: {env: {default: api}}
+security: [{bearer: []}]
+components:
+  parameters:
+    Id: {name: id, in: path, required: true, schema: {type: integer, format: int64}}
+  schemas:
+    User:
+      type: object
+      required: [email]
+      properties:
+        email: {type: string}
+        role: {type: string}
+paths:
+  /users/{id}:
+    parameters: [{$ref: '#/components/parameters/Id'}]
+    get:
+      operationId: getUser
+      summary: Get a user
+    put:
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/User'}
+  /health:
+    get:
+      security: [{}]
+      parameters: [{name: verbose, in: query, schema: {type: boolean}}]
+`
+
+func TestParseOpenAPI3YAML(t *testing.T) {
+	d, err := Parse([]byte(openapiYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Format != FormatOpenAPI || d.Title != "Shop" || d.BaseURL != "https://api.shop.example/api/v1" || len(d.Operations) != 3 {
+		t.Fatalf("def = %+v", d)
+	}
+	h := d.Operations[0]
+	if h.Path != "/health" || h.Auth || len(h.Params) != 1 || h.Params[0].In != "query" {
+		t.Fatalf("health = %+v", h)
+	}
+	get := d.Operations[1]
+	if get.Method != "GET" || get.OperationID != "getUser" || !get.Auth || get.Params[0].Type != "integer(int64)" || !get.Params[0].Required {
+		t.Fatalf("get = %+v", get)
+	}
+	put := d.Operations[2]
+	if put.Method != "PUT" || len(put.Params) != 3 || put.Params[1].Name != "email" || !put.Params[1].Required || put.Params[1].In != "body" {
+		t.Fatalf("put = %+v", put)
+	}
+}
+
+func TestParseSwagger2(t *testing.T) {
+	d, err := Parse([]byte(`{"swagger":"2.0","info":{"title":"Pets"},"host":"pets.example","basePath":"/v2","schemes":["http","https"],
+	 "paths":{"/pet":{"post":{"parameters":[{"in":"body","name":"body","schema":{"properties":{"name":{"type":"string"}}}}]}},
+	          "/pet/{petId}/upload":{"post":{"parameters":[{"in":"path","name":"petId","type":"integer"},{"in":"formData","name":"file","type":"file"}]}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Format != FormatSwagger || d.BaseURL != "https://pets.example/v2" || len(d.Operations) != 2 {
+		t.Fatalf("def = %+v", d)
+	}
+	if p := d.Operations[0].Params; len(p) != 1 || p[0].In != "body" || p[0].Name != "name" {
+		t.Fatalf("body params = %+v", p)
+	}
+	if p := d.Operations[1].Params; len(p) != 2 || p[1].In != "form" || !p[0].Required {
+		t.Fatalf("upload params = %+v", p)
+	}
+}
+
+func TestParsePostman(t *testing.T) {
+	d, err := Parse([]byte(`{"info":{"name":"Admin API","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+	 "variable":[{"key":"base","value":"https://admin.example"}],
+	 "auth":{"type":"bearer"},
+	 "item":[{"name":"Users","item":[
+	   {"name":"Get user","request":{"method":"GET","url":{"raw":"{{base}}/users/:id?expand=1","host":["{{base}}"],"path":["users",":id"],"query":[{"key":"expand","value":"1"}]}}},
+	   {"name":"Login","request":{"method":"POST","auth":{"type":"noauth"},"header":[{"key":"X-Tenant","value":"a"}],
+	     "body":{"mode":"raw","raw":"{\"user\":\"a\",\"pass\":\"b\"}"},"url":"{{base}}/login"}}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Format != FormatPostman || d.BaseURL != "https://admin.example" || len(d.Operations) != 2 {
+		t.Fatalf("def = %+v", d)
+	}
+	login, get := d.Operations[0], d.Operations[1]
+	if login.Path != "/login" || login.Auth || len(login.Params) != 3 {
+		t.Fatalf("login = %+v", login)
+	}
+	if get.Path != "/users/{id}" || !get.Auth || get.Params[0].Name != "id" || get.Params[0].In != "path" || get.Params[1].Name != "expand" {
+		t.Fatalf("get = %+v", get)
+	}
+}
+
+func TestParseRejects(t *testing.T) {
+	for _, in := range []string{`{"foo":1}`, `[1,2]`, `{"openapi":"3.0.0","paths":{}}`, "::"} {
+		if _, err := Parse([]byte(in)); err == nil {
+			t.Errorf("%q parsed", in)
+		}
+	}
+	if _, err := Parse([]byte(strings.Repeat(" ", MaxBytes+1))); err == nil {
+		t.Error("oversized input parsed")
+	}
+}
+
+func TestMatcher(t *testing.T) {
+	m := NewMatcher(Operation{Method: "GET", Path: "/users/{id}", BaseURL: "https://api.shop.example:443/api/v1"})
+	cases := []struct {
+		method, host, path string
+		want               bool
+	}{
+		{"GET", "api.shop.example", "/api/v1/users/42", true},
+		{"get", "API.shop.example:443", "/api/v1/users/42/?x=1", true},
+		{"POST", "api.shop.example", "/api/v1/users/42", false},
+		{"GET", "other.example", "/api/v1/users/42", false},
+		{"GET", "api.shop.example", "/api/v1/users/42/orders", false},
+		{"GET", "api.shop.example", "/users/42", false},
+	}
+	for _, c := range cases {
+		if got := m.Match(c.method, c.host, c.path); got != c.want {
+			t.Errorf("%s %s%s = %v, want %v", c.method, c.host, c.path, got, c.want)
+		}
+	}
+	anyHost := NewMatcher(Operation{Method: "GET", Path: "/files/{name}.{ext}"})
+	if !anyHost.Match("GET", "x.example", "/files/a.pdf") || anyHost.Match("GET", "x.example", "/files/a") {
+		t.Error("in-segment template mismatch")
+	}
+}

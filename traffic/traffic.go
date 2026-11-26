@@ -1198,6 +1198,39 @@ func (t *Traffic) Search(host string, page, size int) ([]ExchangeMeta, error) {
 	return out, rows.Err()
 }
 
+// Since returns up to limit exchanges recorded at or after since (unix seconds),
+// newest first, optionally only for the given hosts (host names without port; an
+// empty list means every host). Bodies are never read.
+func (t *Traffic) Since(hosts []string, since int64, limit int) ([]ExchangeMeta, error) {
+	if limit <= 0 || limit > 100000 {
+		limit = 20000
+	}
+	q := `SELECT id,ts,host,method,url_template,url,status,content_type,resp_len,path FROM exchanges WHERE ts>=?`
+	args := []any{since}
+	if len(hosts) > 0 {
+		q += ` AND host IN (?` + strings.Repeat(",?", len(hosts)-1) + `)`
+		for _, h := range hosts {
+			args = append(args, h)
+		}
+	}
+	q += ` ORDER BY ts DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := t.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ExchangeMeta
+	for rows.Next() {
+		var m ExchangeMeta
+		if err := rows.Scan(&m.ID, &m.TS, &m.Host, &m.Method, &m.URLTemplate, &m.URL, &m.Status, &m.ContentType, &m.RespLen, &m.Path); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // ResponseContaining reports the newest capture recorded in [fromTS,toTS]
 // (unix seconds) whose response side contains one of lines. Request-side matches
 // are ignored after the index lookup: what classifies a fact is what came back

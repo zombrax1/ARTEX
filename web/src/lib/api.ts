@@ -8,6 +8,8 @@ import type { ChatMention } from "@/lib/chat-mentions";
 import { MOCK } from "@/lib/mock/enabled";
 import { mockHandle } from "@/lib/mock/handler";
 import type {
+  APICoverage,
+  APIDefinition,
   ActiveFindingRetest,
   Activity,
   Agent,
@@ -341,6 +343,13 @@ export const api = {
   addTaskCredential: (id: string, input: TaskCredentialInput) =>
     post<TaskCredential>(`/tasks/${id}/credentials`, input),
   deleteTaskCredential: (id: string, cid: number) => del(`/tasks/${id}/credentials/${cid}`),
+  // Imported API definitions and per-operation coverage.
+  taskAPICoverage: (id: string) => get<APICoverage>(`/tasks/${id}/api-definitions`),
+  importAPIDefinition: (id: string, content: string, name = "") =>
+    post<APIDefinition>(`/tasks/${id}/api-definitions`, { name, content }),
+  deleteAPIDefinition: (id: string, did: number) => del(`/tasks/${id}/api-definitions/${did}`),
+  markAPIOperation: (id: string, oid: number, mark: "" | "tested" | "skipped", note = "") =>
+    put(`/tasks/${id}/api-operations/${oid}`, { mark, note }),
   renameTaskCategory: (id: number, name: string) => patch<TaskCategory>(`/task-categories/${id}`, { name }),
   deleteTaskCategory: (id: number) => del<{ deleted: number }>(`/task-categories/${id}`),
   updateTaskCategory: (taskId: string, categoryId?: number) =>
