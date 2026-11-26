@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import {
+  FlaskConicalIcon,
   Loader2Icon,
   PlugZapIcon,
   PlusIcon,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { ReadinessBadge, ReadinessDialog, useReadiness } from "@/components/model-readiness";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1025,6 +1027,8 @@ export default function LLMPage() {
   // from "Edit X" to "New". editing = null means create.
   const [editOpen, setEditOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<LLMProfile | null>(null);
+  const readiness = useReadiness();
+  const [testing, setTesting] = React.useState<LLMProfile | null>(null);
   const openEditor = React.useCallback((p: LLMProfile | null) => {
     setEditing(p);
     setEditOpen(true);
@@ -1183,6 +1187,7 @@ export default function LLMPage() {
                         <span>{t("Max {count} at once", { count: p.max_concurrent ?? 0 })}</span>
                       )}
                       <QueueBadge stat={queue[p.id]} />
+                      <ReadinessBadge report={readiness.results[p.id]} model={p.model} />
                       {p.proxy && <span className="truncate">{t("Proxy {proxy}", { proxy: p.proxy })}</span>}
                       {p.reasoning_effort && (
                         <span>
@@ -1215,6 +1220,17 @@ export default function LLMPage() {
                         {p.is_default ? t("Active") : t("Set as active")}
                       </Button>
                       <Button
+                        size="sm"
+                        variant="outline"
+                        title={t("Check that this model can call tools and finish a short task")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTesting(p);
+                        }}
+                      >
+                        <FlaskConicalIcon /> {t("Test tools")}
+                      </Button>
+                      <Button
                         size="icon"
                         variant="outline"
                         aria-label={t("Delete profile")}
@@ -1243,7 +1259,22 @@ export default function LLMPage() {
         </TabsContent>
       </Tabs>
 
-      <ProfileSheet profile={editing} open={editOpen} onOpenChange={setEditOpen} onSaved={() => void load()} />
+      <ReadinessDialog
+        profile={testing}
+        report={testing ? readiness.results[testing.id] : undefined}
+        open={testing !== null}
+        onOpenChange={(o) => !o && setTesting(null)}
+        onTested={readiness.reload}
+      />
+      <ProfileSheet
+        profile={editing}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSaved={() => {
+          void load();
+          readiness.reload();
+        }}
+      />
       <PoolSheet open={poolOpen} onOpenChange={setPoolOpen} pool={pool} onReload={loadPool} />
     </div>
   );
