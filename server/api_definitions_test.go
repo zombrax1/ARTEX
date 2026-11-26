@@ -76,7 +76,13 @@ func TestAPIDefinitionImportAndCoverage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for pass, want := range []int{2, 3, 4, 4} {
+	// Stored later but sorting first by ts and id (a wrapped id sequence), with
+	// the host in upper case: still counted.
+	if _, err := s.m.Traffic().DB().Exec(`INSERT INTO exchanges (id,ts,host,method,url_template,url,status,content_type,req_len,resp_len,path)
+		VALUES ('0000-late',?,'LAB.example','GET','/api/users/{n}','https://LAB.example/api/users/5',200,'',0,0,'/api/users/5')`, now); err != nil {
+		t.Fatal(err)
+	}
+	for pass, want := range []int{2, 3, 4, 5, 5} {
 		read()
 		for _, o := range got.Operations {
 			if o.Method == "GET" && o.Requests != want {

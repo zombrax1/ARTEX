@@ -1,8 +1,8 @@
 -- Imported API definitions (OpenAPI 3, Swagger 2, Postman v2) per task, and the
 -- operations they declare. An operation counts as tested when captured traffic
 -- matches it or an agent/user marked it; skipped when marked with a reason.
--- Matching traffic is counted once and kept on the operation; scan_ts/scan_id
--- on the definition is the last capture already counted, so later passes only
+-- Matching traffic is counted once and kept on the operation; scan_seq on the
+-- definition is the storage sequence of the last capture already counted, so later passes only
 -- read newer traffic and older coverage is never lost.
 CREATE TABLE IF NOT EXISTS api_definitions (
     id          BIGSERIAL PRIMARY KEY,
@@ -11,8 +11,7 @@ CREATE TABLE IF NOT EXISTS api_definitions (
     format      TEXT NOT NULL CHECK (format IN ('openapi','swagger','postman')),
     base_url    TEXT NOT NULL DEFAULT '',
     imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    scan_ts     BIGINT NOT NULL DEFAULT 0,
-    scan_id     TEXT NOT NULL DEFAULT ''
+    scan_seq    BIGINT NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_api_definitions_task ON api_definitions(task_id);
 
