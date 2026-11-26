@@ -41,8 +41,7 @@ type APIOperation struct {
 
 	SeenRequests int    `json:"-"` // matching captures counted so far
 	SeenLast     string `json:"-"` // newest of them
-	ScanTS       int64  `json:"-"` // its definition's scan cursor
-	ScanID       string `json:"-"`
+	ScanSeq      int64  `json:"-"` // its definition's scan cursor
 }
 
 // Operation returns the parsed form, for matching.
@@ -122,7 +121,7 @@ func (d *DB) DeleteAPIDefinition(taskID, id int64) (bool, error) {
 // APIOperations lists every imported operation of a task.
 func (d *DB) APIOperations(taskID int64) ([]APIOperation, error) {
 	rows, err := d.Query(`SELECT o.id, o.definition_id, o.method, o.path, o.base_url, o.operation_id, o.summary, o.params, o.auth,
-		o.mark, o.mark_note, o.mark_by, o.marked_at, d.imported_at, o.seen_requests, o.seen_last, d.scan_ts, d.scan_id
+		o.mark, o.mark_note, o.mark_by, o.marked_at, d.imported_at, o.seen_requests, o.seen_last, d.scan_seq
 		FROM api_operations o JOIN api_definitions d ON d.id = o.definition_id
 		WHERE o.task_id = $1 ORDER BY d.imported_at DESC, o.id`, taskID)
 	if err != nil {
@@ -135,7 +134,7 @@ func (d *DB) APIOperations(taskID int64) ([]APIOperation, error) {
 		var params []byte
 		var marked sql.NullTime
 		if err := rows.Scan(&o.ID, &o.DefinitionID, &o.Method, &o.Path, &o.BaseURL, &o.OperationID, &o.Summary, &params, &o.Auth,
-			&o.Mark, &o.MarkNote, &o.MarkBy, &marked, &o.ImportedAt, &o.SeenRequests, &o.SeenLast, &o.ScanTS, &o.ScanID); err != nil {
+			&o.Mark, &o.MarkNote, &o.MarkBy, &marked, &o.ImportedAt, &o.SeenRequests, &o.SeenLast, &o.ScanSeq); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(params, &o.Params)
@@ -267,17 +266,15 @@ func literalSegments(path string) int {
 }
 
 // RecordAPIScan adds one scan's observations to a definition's operations and
-// moves its cursor from (fromTS, fromID) to (toTS, toID). It does nothing and
-// reports false when another scan moved the cursor first, so no capture is
-// counted twice.
-func (d *DB) RecordAPIScan(defID, fromTS int64, fromID string, toTS int64, toID string, obs map[int64]APIObservation) (bool, error) {
+// moves its cursor from fromSeq to toSeq. It does nothing and reports false
+// when another scan moved the cursor first, so no capture is counted twice.
+func (d *DB) RecordAPIScan(defID, fromSeq, toSeq int64, obs map[int64]APIObservation) (bool, error) {
 	tx, err := d.Begin()
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.Exec(`UPDATE api_definitions SET scan_ts=$4, scan_id=$5 WHERE id=$1 AND scan_ts=$2 AND scan_id=$3`,
-		defID, fromTS, fromID, toTS, toID)
+	res, err := tx.Exec(`UPDATE api_definitions SET scan_seq=$3 WHERE id=$1 AND scan_seq=$2`, defID, fromSeq, toSeq)
 	if err != nil {
 		return false, err
 	}

@@ -1165,6 +1165,7 @@ type ExchangeMeta struct {
 	RespLen     int    `json:"resp_len"`
 	Path        string `json:"path"`
 	Rewritten   bool   `json:"rewritten"`
+	Seq         int64  `json:"-"` // storage order; set by After only
 }
 
 const rewrittenExistsSQL = `EXISTS(SELECT 1 FROM exchange_rewrites r WHERE r.exchange_id=exchanges.id AND r.outcome='applied')`
@@ -1198,23 +1199,26 @@ func (t *Traffic) Search(host string, page, size int) ([]ExchangeMeta, error) {
 	return out, rows.Err()
 }
 
-// After returns up to limit exchanges recorded after the (ts, id) cursor, oldest
-// first, optionally only for the given hosts (host names without port; an empty
-// list means every host). Passing the last row's ts and id back reads the next
-// page. Bodies are never read.
-func (t *Traffic) After(hosts []string, ts int64, id string, limit int) ([]ExchangeMeta, error) {
+// After returns up to limit exchanges stored after the row sequence afterSeq
+// and recorded at or after minTS (unix seconds), in storage order, optionally
+// only for the given hosts (host names without port, compared without case; an
+// empty list means every host). The sequence (SQLite rowid) grows with every
+// insert, so passing the last row's Seq back reads the next page and a capture
+// stored later is never behind the cursor, whatever its ts or id. Bodies are
+// never read.
+func (t *Traffic) After(hosts []string, afterSeq, minTS int64, limit int) ([]ExchangeMeta, error) {
 	if limit <= 0 || limit > 100000 {
 		limit = 20000
 	}
-	q := `SELECT id,ts,host,method,url_template,url,status,content_type,resp_len,path FROM exchanges WHERE (ts>? OR (ts=? AND id>?))`
-	args := []any{ts, ts, id}
+	q := `SELECT rowid,id,ts,host,method,url_template,url,status,content_type,resp_len,path FROM exchanges WHERE rowid>? AND ts>=?`
+	args := []any{afterSeq, minTS}
 	if len(hosts) > 0 {
-		q += ` AND host IN (?` + strings.Repeat(",?", len(hosts)-1) + `)`
+		q += ` AND lower(host) IN (?` + strings.Repeat(",?", len(hosts)-1) + `)`
 		for _, h := range hosts {
-			args = append(args, h)
+			args = append(args, strings.ToLower(h))
 		}
 	}
-	q += ` ORDER BY ts ASC, id ASC LIMIT ?`
+	q += ` ORDER BY rowid ASC LIMIT ?`
 	args = append(args, limit)
 	rows, err := t.db.Query(q, args...)
 	if err != nil {
@@ -1224,7 +1228,7 @@ func (t *Traffic) After(hosts []string, ts int64, id string, limit int) ([]Excha
 	var out []ExchangeMeta
 	for rows.Next() {
 		var m ExchangeMeta
-		if err := rows.Scan(&m.ID, &m.TS, &m.Host, &m.Method, &m.URLTemplate, &m.URL, &m.Status, &m.ContentType, &m.RespLen, &m.Path); err != nil {
+		if err := rows.Scan(&m.Seq, &m.ID, &m.TS, &m.Host, &m.Method, &m.URLTemplate, &m.URL, &m.Status, &m.ContentType, &m.RespLen, &m.Path); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

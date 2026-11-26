@@ -77,15 +77,10 @@ func (s *Server) scanAPIDefinition(tr *traffic.Traffic, defID int64, ops []db.AP
 			hosts = append(hosts, h)
 		}
 	}
-	curTS, curID := ops[0].ScanTS, ops[0].ScanID
-	if imported := ops[0].ImportedAt.Unix(); curTS < imported {
-		// Nothing counted yet: start at the import, ts >= imported.
-		curTS, curID = imported, ""
-	}
-	fromTS, fromID := ops[0].ScanTS, ops[0].ScanID
+	seq, since := ops[0].ScanSeq, ops[0].ImportedAt.Unix()
 	recorded := false
 	for page := 0; page < apiCoveragePages; page++ {
-		rows, err := tr.After(hosts, curTS, curID, apiCoveragePageSize)
+		rows, err := tr.After(hosts, seq, since, apiCoveragePageSize)
 		if err != nil {
 			log.Printf("[api-import] reading traffic for definition %d coverage failed: %v", defID, err)
 			return recorded
@@ -97,8 +92,8 @@ func (s *Server) scanAPIDefinition(tr *traffic.Traffic, defID int64, ops []db.AP
 		for _, r := range rows {
 			exchanges = append(exchanges, db.APIExchange{ID: r.ID, TS: r.TS, Method: r.Method, URL: r.URL})
 		}
-		last := rows[len(rows)-1]
-		ok, err := s.m.PG().RecordAPIScan(defID, fromTS, fromID, last.TS, last.ID, db.MatchAPIExchanges(ops, exchanges))
+		last := rows[len(rows)-1].Seq
+		ok, err := s.m.PG().RecordAPIScan(defID, seq, last, db.MatchAPIExchanges(ops, exchanges))
 		if err != nil {
 			log.Printf("[api-import] saving coverage for definition %d failed: %v", defID, err)
 			return recorded
@@ -107,8 +102,7 @@ func (s *Server) scanAPIDefinition(tr *traffic.Traffic, defID int64, ops []db.AP
 			// Another pass moved the cursor first and counted these.
 			return true
 		}
-		recorded = true
-		fromTS, fromID, curTS, curID = last.TS, last.ID, last.TS, last.ID
+		recorded, seq = true, last
 		if len(rows) < apiCoveragePageSize {
 			return recorded
 		}
