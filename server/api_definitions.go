@@ -12,52 +12,108 @@ import (
 	"github.com/Autumn-27/artex/agent"
 	"github.com/Autumn-27/artex/apidef"
 	"github.com/Autumn-27/artex/db"
+	"github.com/Autumn-27/artex/traffic"
 )
 
 // API definition import (OpenAPI 3, Swagger 2, Postman v2). Operations are
 // stored per task; an operation counts as tested when the recording proxy saw a
 // matching request after the import, or when an agent or the user marked it.
 
-// apiCoverageTrafficLimit caps how many captured exchanges one coverage pass reads.
-const apiCoverageTrafficLimit = 50000
+// Coverage reads captured traffic incrementally: each definition keeps a cursor
+// on the last capture already counted, and one pass reads at most
+// apiCoveragePages pages of apiCoveragePageSize newer captures per definition.
+// What a pass does not reach, the next one does; nothing counted is lost.
+var (
+	apiCoveragePageSize = 20000
+	apiCoveragePages    = 5
+)
 
-// apiCoverage returns a task's operations with their computed status.
 func (s *Server) apiCoverage(taskID int64) ([]db.APIOperationStatus, error) {
-	ops, err := s.m.PG().APIOperations(taskID)
+	pg := s.m.PG()
+	ops, err := pg.APIOperations(taskID)
 	if err != nil || len(ops) == 0 {
 		return []db.APIOperationStatus{}, err
 	}
-	var exchanges []db.APIExchange
 	if tr := s.m.Traffic(); tr != nil {
-		since := ops[0].ImportedAt
-		hostSet := map[string]bool{}
-		anyHost := false
+		byDef := map[int64][]db.APIOperation{}
+		var order []int64
 		for _, op := range ops {
-			if op.ImportedAt.Before(since) {
-				since = op.ImportedAt
+			if _, ok := byDef[op.DefinitionID]; !ok {
+				order = append(order, op.DefinitionID)
 			}
-			u, err := url.Parse(op.BaseURL)
-			if err != nil || u.Hostname() == "" || strings.Contains(u.Host, "{{") {
-				anyHost = true
-				continue
-			}
-			hostSet[strings.ToLower(u.Hostname())] = true
+			byDef[op.DefinitionID] = append(byDef[op.DefinitionID], op)
 		}
-		var hosts []string
-		if !anyHost {
-			for h := range hostSet {
-				hosts = append(hosts, h)
+		scanned := false
+		for _, id := range order {
+			if s.scanAPIDefinition(tr, id, byDef[id]) {
+				scanned = true
 			}
 		}
-		rows, err := tr.Since(hosts, since.Unix(), apiCoverageTrafficLimit)
+		if scanned {
+			if ops, err = pg.APIOperations(taskID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return db.APICoverage(ops), nil
+}
+
+// scanAPIDefinition counts the captures newer than a definition's cursor and
+// reports whether it recorded anything.
+func (s *Server) scanAPIDefinition(tr *traffic.Traffic, defID int64, ops []db.APIOperation) bool {
+	hostSet := map[string]bool{}
+	anyHost := false
+	for _, op := range ops {
+		u, err := url.Parse(op.BaseURL)
+		if err != nil || u.Hostname() == "" || strings.Contains(u.Host, "{{") {
+			anyHost = true
+			continue
+		}
+		hostSet[strings.ToLower(u.Hostname())] = true
+	}
+	var hosts []string
+	if !anyHost {
+		for h := range hostSet {
+			hosts = append(hosts, h)
+		}
+	}
+	curTS, curID := ops[0].ScanTS, ops[0].ScanID
+	if imported := ops[0].ImportedAt.Unix(); curTS < imported {
+		// Nothing counted yet: start at the import, ts >= imported.
+		curTS, curID = imported, ""
+	}
+	fromTS, fromID := ops[0].ScanTS, ops[0].ScanID
+	recorded := false
+	for page := 0; page < apiCoveragePages; page++ {
+		rows, err := tr.After(hosts, curTS, curID, apiCoveragePageSize)
 		if err != nil {
-			log.Printf("[api-import] reading traffic for task %d coverage failed: %v", taskID, err)
+			log.Printf("[api-import] reading traffic for definition %d coverage failed: %v", defID, err)
+			return recorded
 		}
+		if len(rows) == 0 {
+			return recorded
+		}
+		exchanges := make([]db.APIExchange, 0, len(rows))
 		for _, r := range rows {
 			exchanges = append(exchanges, db.APIExchange{ID: r.ID, TS: r.TS, Method: r.Method, URL: r.URL})
 		}
+		last := rows[len(rows)-1]
+		ok, err := s.m.PG().RecordAPIScan(defID, fromTS, fromID, last.TS, last.ID, db.MatchAPIExchanges(ops, exchanges))
+		if err != nil {
+			log.Printf("[api-import] saving coverage for definition %d failed: %v", defID, err)
+			return recorded
+		}
+		if !ok {
+			// Another pass moved the cursor first and counted these.
+			return true
+		}
+		recorded = true
+		fromTS, fromID, curTS, curID = last.TS, last.ID, last.TS, last.ID
+		if len(rows) < apiCoveragePageSize {
+			return recorded
+		}
 	}
-	return db.APICoverage(ops, exchanges), nil
+	return recorded
 }
 
 type apiCoverageSummary struct {

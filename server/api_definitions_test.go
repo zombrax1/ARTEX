@@ -66,6 +66,25 @@ func TestAPIDefinitionImportAndCoverage(t *testing.T) {
 	if o := byKey["GET /users/{id}"]; o.Status != "tested" || o.LastExchange != "ex-api-1" {
 		t.Fatalf("GET op = %+v", o)
 	}
+	// Counted captures stay counted: later passes read only newer traffic,
+	// a page at a time, and never count a capture twice.
+	defer func(size, pages int) { apiCoveragePageSize, apiCoveragePages = size, pages }(apiCoveragePageSize, apiCoveragePages)
+	apiCoveragePageSize, apiCoveragePages = 1, 1
+	for i := 2; i <= 4; i++ {
+		if _, err := s.m.Traffic().DB().Exec(`INSERT INTO exchanges (id,ts,host,method,url_template,url,status,content_type,req_len,resp_len,path)
+			VALUES (?,?,'lab.example','GET','/api/users/{n}','https://lab.example/api/users/5',200,'',0,0,'/api/users/5')`, fmt.Sprintf("ex-api-%d", i), now+int64(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for pass, want := range []int{2, 3, 4, 4} {
+		read()
+		for _, o := range got.Operations {
+			if o.Method == "GET" && o.Requests != want {
+				t.Fatalf("pass %d: GET requests = %d, want %d", pass, o.Requests, want)
+			}
+		}
+	}
+	apiCoveragePageSize, apiCoveragePages = 20000, 5
 	del := byKey["DELETE /users/{id}"]
 	if w := request("PUT", fmt.Sprintf("%s/api-operations/%d", base, del.ID), `{"mark":"skipped"}`); w.Code != 400 {
 		t.Fatalf("skip without reason: %d", w.Code)

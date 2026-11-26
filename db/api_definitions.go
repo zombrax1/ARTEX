@@ -38,6 +38,11 @@ type APIOperation struct {
 	MarkBy       string         `json:"mark_by,omitempty"`
 	MarkedAt     *time.Time     `json:"marked_at,omitempty"`
 	ImportedAt   time.Time      `json:"imported_at"` // of its definition
+
+	SeenRequests int    `json:"-"` // matching captures counted so far
+	SeenLast     string `json:"-"` // newest of them
+	ScanTS       int64  `json:"-"` // its definition's scan cursor
+	ScanID       string `json:"-"`
 }
 
 // Operation returns the parsed form, for matching.
@@ -117,7 +122,7 @@ func (d *DB) DeleteAPIDefinition(taskID, id int64) (bool, error) {
 // APIOperations lists every imported operation of a task.
 func (d *DB) APIOperations(taskID int64) ([]APIOperation, error) {
 	rows, err := d.Query(`SELECT o.id, o.definition_id, o.method, o.path, o.base_url, o.operation_id, o.summary, o.params, o.auth,
-		o.mark, o.mark_note, o.mark_by, o.marked_at, d.imported_at
+		o.mark, o.mark_note, o.mark_by, o.marked_at, d.imported_at, o.seen_requests, o.seen_last, d.scan_ts, d.scan_id
 		FROM api_operations o JOIN api_definitions d ON d.id = o.definition_id
 		WHERE o.task_id = $1 ORDER BY d.imported_at DESC, o.id`, taskID)
 	if err != nil {
@@ -130,7 +135,7 @@ func (d *DB) APIOperations(taskID int64) ([]APIOperation, error) {
 		var params []byte
 		var marked sql.NullTime
 		if err := rows.Scan(&o.ID, &o.DefinitionID, &o.Method, &o.Path, &o.BaseURL, &o.OperationID, &o.Summary, &params, &o.Auth,
-			&o.Mark, &o.MarkNote, &o.MarkBy, &marked, &o.ImportedAt); err != nil {
+			&o.Mark, &o.MarkNote, &o.MarkBy, &marked, &o.ImportedAt, &o.SeenRequests, &o.SeenLast, &o.ScanTS, &o.ScanID); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(params, &o.Params)
@@ -196,38 +201,105 @@ type APIOperationStatus struct {
 	LastExchange string `json:"last_exchange,omitempty"` // newest matching traffic id
 }
 
-// APICoverage computes each operation's status from its mark and the captured
-// exchanges (newest first). An exchange counts for an operation only when it
-// was recorded after that operation's definition was imported. A manual mark
-// wins over traffic: skipped stays skipped even if a request was seen.
-func APICoverage(ops []APIOperation, exchanges []APIExchange) []APIOperationStatus {
-	type parsed struct {
-		method, host, path string
-		ts                 int64
-		id                 string
+// APIObservation is what one scan saw for an operation.
+type APIObservation struct {
+	Requests int
+	Last     string
+	lastTS   int64
+}
+
+// MatchAPIExchanges counts, per operation id, the exchanges that match it. ops
+// are the operations of one definition. An exchange counts only when recorded
+// after the definition was imported, and only for the most concrete operations
+// it matches: /users/me is not also credited to /users/{id}.
+func MatchAPIExchanges(ops []APIOperation, exchanges []APIExchange) map[int64]APIObservation {
+	type compiled struct {
+		id       int64
+		m        apidef.Matcher
+		since    int64
+		concrete int
 	}
-	ps := make([]parsed, 0, len(exchanges))
+	cs := make([]compiled, 0, len(ops))
+	for _, op := range ops {
+		cs = append(cs, compiled{id: op.ID, m: apidef.NewMatcher(op.Operation()), since: op.ImportedAt.Unix(), concrete: literalSegments(op.Path)})
+	}
+	out := map[int64]APIObservation{}
+	var hits []int
 	for _, e := range exchanges {
 		u, err := url.Parse(e.URL)
 		if err != nil {
 			continue
 		}
-		ps = append(ps, parsed{method: e.Method, host: u.Host, path: u.EscapedPath(), ts: e.TS, id: e.ID})
-	}
-	out := make([]APIOperationStatus, 0, len(ops))
-	for _, op := range ops {
-		st := APIOperationStatus{APIOperation: op, Status: APIStatusUntested}
-		m := apidef.NewMatcher(op.Operation())
-		since := op.ImportedAt.Unix()
-		for _, e := range ps {
-			if e.ts < since || !m.Match(e.method, e.host, e.path) {
+		host, path := u.Host, u.EscapedPath()
+		hits, best := hits[:0], -1
+		for i, c := range cs {
+			if e.TS < c.since || !c.m.Match(e.Method, host, path) {
 				continue
 			}
-			if st.Requests == 0 {
-				st.LastExchange = e.id
+			switch {
+			case c.concrete > best:
+				hits, best = append(hits[:0], i), c.concrete
+			case c.concrete == best:
+				hits = append(hits, i)
 			}
-			st.Requests++
 		}
+		for _, i := range hits {
+			o := out[cs[i].id]
+			o.Requests++
+			if o.Last == "" || e.TS >= o.lastTS {
+				o.Last, o.lastTS = e.ID, e.TS
+			}
+			out[cs[i].id] = o
+		}
+	}
+	return out
+}
+
+// literalSegments counts the path segments with no template variable.
+func literalSegments(path string) int {
+	n := 0
+	for _, seg := range strings.Split(path, "/") {
+		if seg != "" && !strings.Contains(seg, "{") {
+			n++
+		}
+	}
+	return n
+}
+
+// RecordAPIScan adds one scan's observations to a definition's operations and
+// moves its cursor from (fromTS, fromID) to (toTS, toID). It does nothing and
+// reports false when another scan moved the cursor first, so no capture is
+// counted twice.
+func (d *DB) RecordAPIScan(defID, fromTS int64, fromID string, toTS int64, toID string, obs map[int64]APIObservation) (bool, error) {
+	tx, err := d.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.Exec(`UPDATE api_definitions SET scan_ts=$4, scan_id=$5 WHERE id=$1 AND scan_ts=$2 AND scan_id=$3`,
+		defID, fromTS, fromID, toTS, toID)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	for id, o := range obs {
+		if _, err := tx.Exec(`UPDATE api_operations SET seen_requests = seen_requests + $3, seen_last = $4 WHERE id=$1 AND definition_id=$2`,
+			id, defID, o.Requests, o.Last); err != nil {
+			return false, err
+		}
+	}
+	return true, tx.Commit()
+}
+
+// APICoverage computes each operation's status from its mark and the traffic
+// counted so far. A manual mark wins over traffic: skipped stays skipped even
+// if a request was seen.
+func APICoverage(ops []APIOperation) []APIOperationStatus {
+	out := make([]APIOperationStatus, 0, len(ops))
+	for _, op := range ops {
+		st := APIOperationStatus{APIOperation: op, Status: APIStatusUntested, Requests: op.SeenRequests, LastExchange: op.SeenLast}
 		switch {
 		case op.Mark == APIStatusSkipped:
 			st.Status = APIStatusSkipped
