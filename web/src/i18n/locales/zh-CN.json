@@ -1510,6 +1510,8 @@
   "No tasks": "暂无任务",
   "No tasks in this category": "该分类暂无任务",
   "No tasks yet. Click \"New task\" at the top right to start.": "暂无任务，点击右上角「新建任务」开始。",
+  "No tasks under the selected company, but {count} task(s) exist under other companies.": "所选企业下暂无任务，但其他企业下有 {count} 个任务。",
+  "View all companies": "查看全部企业",
   "No templates yet": "暂无模板",
   "No test accounts": "暂无测试账号",
   "No test assets in this category yet": "当前分类暂无测试资产",

@@ -403,8 +403,34 @@ func TestListTasksFiltersByCompany(t *testing.T) {
 		return ids
 	}
 
+	hidden := func(query string) int {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.listTasks(rec, httptest.NewRequest(http.MethodGet, "/api/tasks"+query, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", query, rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			HiddenByCompany int `json:"hidden_by_company"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.HiddenByCompany
+	}
+
 	if got := list(fmt.Sprintf("?company=%d", companies[0])); len(got) != 1 || got[0] != taskIDs[0] {
 		t.Fatalf("company A: want only task %s, got %v", taskIDs[0], got)
+	}
+	// Each company owns one of the two tasks, so filtering to one hides the other.
+	if got := hidden(fmt.Sprintf("?company=%d", companies[0])); got != 1 {
+		t.Fatalf("company A: want hidden_by_company=1, got %d", got)
+	}
+	if got := hidden("?company=abc"); got != len(taskIDs) {
+		t.Fatalf("non-numeric company: want hidden_by_company=%d, got %d", len(taskIDs), got)
+	}
+	if got := hidden(""); got != 0 {
+		t.Fatalf("all companies: want hidden_by_company=0, got %d", got)
 	}
 	if got := list(fmt.Sprintf("?company=%d", companies[1])); len(got) != 1 || got[0] != taskIDs[1] {
 		t.Fatalf("company B: want only task %s, got %v", taskIDs[1], got)
