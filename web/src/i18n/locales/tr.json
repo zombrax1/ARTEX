@@ -2762,5 +2762,17 @@
   "Run again": "Yeniden çalıştır",
   "Run test": "Testi çalıştır",
   "Failed the model readiness test: {names}. Agents on this model cannot call tools reliably.": "Model hazırlık testinde başarısız: {names}. Bu modeldeki ajanlar araçları güvenilir şekilde çağıramaz.",
-  "Not confirmed by the model readiness test: {names}. Run it under System → LLM before a long task.": "Model hazırlık testiyle doğrulanmadı: {names}. Uzun bir görevden önce Sistem → LLM altında çalıştırın."
+  "Not confirmed by the model readiness test: {names}. Run it under System → LLM before a long task.": "Model hazırlık testiyle doğrulanmadı: {names}. Uzun bir görevden önce Sistem → LLM altında çalıştırın.",
+  "Identical failures": "Aynı hatalar",
+  "After this many failures of the exact same call, the next identical call is refused.": "Tam olarak aynı çağrı bu kadar kez başarısız olduktan sonra, sonraki aynı çağrı reddedilir.",
+  "Identical successes": "Aynı başarılar",
+  "After this many identical successful calls in a row, the next one is refused.": "Art arda bu kadar aynı başarılı çağrıdan sonra, bir sonraki reddedilir.",
+  "Failures in a row": "Art arda hatalar",
+  "After this many failed calls in a row, of any kind, the agent must change direction.": "Herhangi bir türde art arda bu kadar başarısız çağrıdan sonra ajan yön değiştirmek zorundadır.",
+  "Stop after refusals": "Retlerden sonra durdur",
+  "After this many refusals the run records what failed and ends.": "Bu kadar retten sonra çalışma neyin başarısız olduğunu kaydeder ve sona erer.",
+  "Repeated-failure detection saved": "Tekrarlanan hata algılama kaydedildi",
+  "Repeated-failure detection": "Tekrarlanan hata algılama",
+  "Stops worker and chat agents from repeating failing commands or identical requests. A refused call is not run; the agent gets a summary of the earlier failure and must change approach. Set a limit to 0 to turn that check off. Applies to runs started afterwards.": "Worker ve sohbet ajanlarının başarısız komutları veya aynı istekleri tekrarlamasını engeller. Reddedilen çağrı çalıştırılmaz; ajan önceki hatanın özetini alır ve yaklaşımını değiştirmelidir. Bir kontrolü kapatmak için sınırı 0 yapın. Daha sonra başlatılan çalışmalara uygulanır.",
+  "Failed to load settings: {error}": "Ayarlar yüklenemedi: {error}"
 }

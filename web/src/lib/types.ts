@@ -1066,6 +1066,16 @@ export interface Settings {
   notify_assets_max_shown?: number; // asset names listed per finding, 0-50, default 3
   // Target noise profile; the stored setting wins over ARTEX_NOISE_PROFILE. Applies to the next request.
   noise_profile?: NoiseProfileName;
+  // Repeated-failure detection limits (0 = that check off); applies to runs started afterwards.
+  repeat_guard?: RepeatGuardLimits;
+}
+
+export interface RepeatGuardLimits {
+  enabled: boolean;
+  fail_repeats: number; // identical failing calls before the next is refused
+  identical_repeats: number; // identical successful calls in a row before the next is refused
+  failure_streak: number; // failed calls in a row (any) before a change of direction is forced
+  stop_after: number; // refusals before the run is told to wrap up
 }
 
 export type NoiseProfileName = "off" | "quiet" | "balanced" | "aggressive";
