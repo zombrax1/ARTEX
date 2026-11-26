@@ -31,10 +31,13 @@ const nextConfig = {
           images: { unoptimized: true },
         }
       : {
-          // Dev: reverse-proxy /api/* to the Go backend (default :8787, override with AUTOPENTEST_API).
+          // Dev: reverse-proxy /api/* and the /mcp endpoint to the Go backend (default :8787, override with AUTOPENTEST_API).
           async rewrites() {
             const backend = process.env.AUTOPENTEST_API ?? "http://localhost:8787";
-            return [{ source: "/api/:path*", destination: `${backend}/api/:path*` }];
+            return [
+              { source: "/api/:path*", destination: `${backend}/api/:path*` },
+              { source: "/mcp", destination: `${backend}/mcp` },
+            ];
           },
         }),
 };

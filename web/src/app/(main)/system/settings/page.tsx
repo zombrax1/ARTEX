@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import { CHAT_SEND_MODE_OPTIONS, type ChatSendMode, setChatSendMode, useChatSendMode } from "@/lib/chat-send-mode";
 import type { Settings } from "@/lib/types";
 
+import { McpServerCard } from "./mcp-server-card";
 import { NoiseProfileCard } from "./noise-profile-card";
 import { RepeatGuardCard } from "./repeat-guard-card";
 
@@ -344,6 +345,7 @@ export default function SystemSettingsPage() {
         <NoiseProfileCard />
 
         <RepeatGuardCard />
+        <McpServerCard />
 
         <Card className="mb-4 break-inside-avoid md:mb-6">
           <CardHeader>

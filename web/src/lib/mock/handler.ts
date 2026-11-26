@@ -2315,6 +2315,23 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       gpus: [{ index: 0, name: "Demo GPU", memory_used_bytes: 6 * 1024 ** 3, memory_total_bytes: 16 * 1024 ** 3, memory_percent: 37.5, util_percent: 41 }],
       gpu_source: "nvidia-smi",
     };
+  if (path === "/mcp-server" && (m === "GET" || m === "PUT"))
+    return {
+      enabled: m === "PUT" ? Boolean(b.enabled) : false,
+      path: "/mcp",
+      scopes: ["read", "task:create", "task:control"],
+      tools: [],
+      tokens: [
+        { id: 1, name: "laptop Claude Code", hint: "x9Qa", scopes: ["read"], created_at: new Date().toISOString() },
+      ],
+    };
+  if (path === "/mcp-server/tokens" && m === "POST")
+    return {
+      token: "artex_mcp_demo_token_not_real",
+      item: { id: 2, name: "demo", hint: "real", scopes: ["read"], created_at: new Date().toISOString() },
+    };
+  if (path.startsWith("/mcp-server/tokens/")) return { ok: true };
+  if (path.startsWith("/mcp-server/audit")) return { entries: [] };
   if (path === "/llm/pool/reset")
     return { ...D.llmPool, chain: D.llmPool.chain.map((c) => ({ ...c, state: "ok", fails: 0, cooldown_secs: 0 })) };
   if (seg[0] === "llm" && seg[1] === "profiles" && seg.length === 3 && m === "DELETE")
