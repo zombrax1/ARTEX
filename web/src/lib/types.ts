@@ -1071,6 +1071,41 @@ export interface Settings {
 export type NoiseProfileName = "off" | "quiet" | "balanced" | "aggressive";
 
 // GET /api/settings/noise: the current profile and its per-host counters (current minute, no reset).
+// ARTEX's own MCP server (/mcp): access tokens for outside MCP clients.
+export type MCPServerScope = "read" | "task:create" | "task:control";
+
+export interface MCPServerToken {
+  id: number;
+  name: string;
+  hint: string; // last characters of the token
+  scopes: MCPServerScope[];
+  created_at: string;
+  last_used_at?: string;
+  expires_at?: string;
+  revoked_at?: string;
+}
+
+export interface MCPServerSettings {
+  enabled: boolean;
+  path: string;
+  scopes: MCPServerScope[];
+  tools: { name: string; scope: MCPServerScope }[];
+  tokens: MCPServerToken[];
+}
+
+export interface MCPServerAuditEntry {
+  id: number;
+  ts: string;
+  token_id: number;
+  token_name: string;
+  tool: string;
+  args: string;
+  ok: boolean;
+  result: string;
+  remote_addr: string;
+  duration_ms: number;
+}
+
 export interface NoiseStatus {
   profile: NoiseProfileName;
   hosts: {

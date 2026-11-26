@@ -1012,6 +1012,15 @@ export const api = {
   settings: () => get<Settings>(`/settings`),
   setSettings: (patch: Partial<Settings>) => put<Settings>(`/settings`, patch),
   noiseStatus: () => get<import("@/lib/types").NoiseStatus>(`/settings/noise`),
+  // ARTEX's own MCP server endpoint (/mcp): switch, access tokens and the call log.
+  mcpServer: () => get<import("@/lib/types").MCPServerSettings>("/mcp-server"),
+  setMCPServerEnabled: (enabled: boolean) => put<import("@/lib/types").MCPServerSettings>("/mcp-server", { enabled }),
+  createMCPServerToken: (body: { name: string; scopes: string[]; expires_in_days: number }) =>
+    post<{ token: string; item: import("@/lib/types").MCPServerToken }>("/mcp-server/tokens", body),
+  revokeMCPServerToken: (id: number) => post<{ ok: boolean }>(`/mcp-server/tokens/${id}/revoke`),
+  deleteMCPServerToken: (id: number) => del<{ ok: boolean }>(`/mcp-server/tokens/${id}`),
+  mcpServerAudit: (limit = 20) =>
+    get<{ entries: import("@/lib/types").MCPServerAuditEntry[] }>(`/mcp-server/audit?limit=${limit}`),
   // Run a real "test" search with the given (or saved) config to verify it works.
   testWebSearch: (patch: {
     web_search_backend?: string;

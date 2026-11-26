@@ -60,8 +60,11 @@ type Server struct {
 	execPriv  ExecPrivilege   // identity agent processes run under; zero keeps the server's own
 	isolation IsolationStatus // result of the startup isolation self-test (isolation.go); zero when not run
 
-	setupMu    sync.Mutex
-	setupToken string // one-time token POST /api/auth/init requires; empty when none is active
+	setupMu sync.Mutex
+
+	// mcpStoreOverride replaces the database behind /mcp in tests.
+	mcpStoreOverride mcpStore
+	setupToken       string // one-time token POST /api/auth/init requires; empty when none is active
 	// pwdVersion is auth.password_version, a counter. Zero means no password
 	// change is stored yet, and any valid token is accepted. pwdState is
 	// pwdUnreadable when that counter could not be read; every session is
@@ -1072,6 +1075,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/settings/python/detect", s.pgDetectPython)
 	mux.HandleFunc("POST /api/tools/{key}/reset", s.pgResetTool)
 	// MCP CRUD
+	// ARTEX's own MCP server endpoint (/mcp): switch, access tokens, call audit.
+	mux.HandleFunc("GET /api/mcp-server", s.getMCPServerSettings)
+	mux.HandleFunc("PUT /api/mcp-server", s.putMCPServerSettings)
+	mux.HandleFunc("POST /api/mcp-server/tokens", s.createMCPServerToken)
+	mux.HandleFunc("POST /api/mcp-server/tokens/{id}/revoke", s.revokeMCPServerToken)
+	mux.HandleFunc("DELETE /api/mcp-server/tokens/{id}", s.deleteMCPServerToken)
+	mux.HandleFunc("GET /api/mcp-server/audit", s.listMCPServerAudit)
 	mux.HandleFunc("GET /api/mcp", s.pgListMCP)
 	mux.HandleFunc("POST /api/mcp", s.pgSaveMCP)
 	mux.HandleFunc("DELETE /api/mcp/{id}", s.pgDeleteMCP)
@@ -1170,6 +1180,9 @@ func (s *Server) Handler() http.Handler {
 	api := cors(s.requireAuth(mux))
 	root := http.NewServeMux()
 	root.Handle("/api/", api)
+	// ARTEX as an MCP server: outside the console login, authenticated by its own
+	// access tokens (mcp_server.go). Answers 404 while the feature is off.
+	root.HandleFunc(mcpEndpointPath, s.serveMCP)
 	webui := s.webuiHandler()
 	root.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Document-only headers; the shared ones come from securityHeaders.
