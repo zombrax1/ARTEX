@@ -118,3 +118,19 @@ func TestReadinessLimited(t *testing.T) {
 		}
 	}
 }
+
+func TestReadinessMissingRequiredReportField(t *testing.T) {
+	r := runScripted(t, []scriptedReply{
+		{tool: "record_port", args: `{"host":"192.0.2.10","port":8443,"protocol":"tcp","state":"open"}`},
+		{text: "DONE"},
+		{tool: "run_command", args: `{"command":"curl -sI http://192.0.2.20/"}`},
+		{tool: "report_observation", args: `{"title":"Apache/2.4.49","severity":"low"}`},
+		{text: "Done."},
+	})
+	if r.Verdict != ReadinessLimited {
+		t.Fatalf("verdict %s: %+v", r.Verdict, r.Checks)
+	}
+	if p := strings.Join(r.Checks[1].Problems, " "); !strings.Contains(p, "evidence is missing") {
+		t.Fatalf("problems = %q", p)
+	}
+}

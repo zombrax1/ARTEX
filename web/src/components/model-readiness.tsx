@@ -53,8 +53,15 @@ export function useReadiness() {
   return { results, reload };
 }
 
+// isStale reports whether a result was measured on a different model than the
+// profile now uses. The server says so too, but a profile edited on this page
+// changes before the stored results are fetched again.
+export function isStale(report: ReadinessReport, model?: string) {
+  return report.stale || (model !== undefined && report.model !== model);
+}
+
 // ReadinessBadge shows a profile's last measured tool readiness.
-export function ReadinessBadge({ report }: { report?: ReadinessReport }) {
+export function ReadinessBadge({ report, model }: { report?: ReadinessReport; model?: string }) {
   if (!report) {
     return (
       <Badge variant="outline" className="text-muted-foreground" title={t("The model readiness test has not been run")}>
@@ -167,7 +174,7 @@ export function ReadinessDialog({
             <span>
               {current ? (
                 <>
-                  <ReadinessBadge report={current} /> <span className="text-muted-foreground">{current.summary}</span>
+                  <ReadinessBadge report={current} model={profile?.model} /> <span className="text-muted-foreground">{current.summary}</span>
                   <span className="block text-muted-foreground text-xs">
                     {t("{model} · tested {time} · {seconds}s", {
                       model: current.model,
@@ -227,10 +234,12 @@ export function ReadinessWarning({ profiles, ids }: { profiles: LLMProfile[]; id
   const chosen = ids.length > 0 ? profiles.filter((p) => ids.includes(p.id)) : profiles.filter((p) => p.is_default);
   const flagged = chosen.filter((p) => {
     const r = results[p.id];
-    return !r || r.stale || r.verdict !== "ready";
+    return !r || isStale(r, p.model) || r.verdict !== "ready";
   });
   if (flagged.length === 0) return null;
-  const failing = flagged.filter((p) => results[p.id] && !results[p.id].stale && results[p.id].verdict === "not_ready");
+  const failing = flagged.filter(
+    (p) => results[p.id] && !isStale(results[p.id], p.model) && results[p.id].verdict === "not_ready",
+  );
   return (
     <p
       className={cn(

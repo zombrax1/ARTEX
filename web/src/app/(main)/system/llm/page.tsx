@@ -1187,7 +1187,7 @@ export default function LLMPage() {
                         <span>{t("Max {count} at once", { count: p.max_concurrent ?? 0 })}</span>
                       )}
                       <QueueBadge stat={queue[p.id]} />
-                      <ReadinessBadge report={readiness.results[p.id]} />
+                      <ReadinessBadge report={readiness.results[p.id]} model={p.model} />
                       {p.proxy && <span className="truncate">{t("Proxy {proxy}", { proxy: p.proxy })}</span>}
                       {p.reasoning_effort && (
                         <span>
@@ -1266,7 +1266,15 @@ export default function LLMPage() {
         onOpenChange={(o) => !o && setTesting(null)}
         onTested={readiness.reload}
       />
-      <ProfileSheet profile={editing} open={editOpen} onOpenChange={setEditOpen} onSaved={() => void load()} />
+      <ProfileSheet
+        profile={editing}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSaved={() => {
+          void load();
+          readiness.reload();
+        }}
+      />
       <PoolSheet open={poolOpen} onOpenChange={setPoolOpen} pool={pool} onReload={loadPool} />
     </div>
   );

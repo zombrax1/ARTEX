@@ -267,8 +267,16 @@ func checkTask(ctx context.Context, prov llm.Provider, c Config) ReadinessCheck 
 		if reported == nil {
 			ch.Problems = append(ch.Problems, "The report arguments are not valid JSON.")
 		} else {
-			text := fmt.Sprint(reported["title"], " ", reported["evidence"])
-			if !strings.Contains(text, "2.4.49") {
+			// The stub takes raw input, so the schema is checked here: every
+			// required field must be a non-empty string.
+			for _, f := range []string{"title", "severity", "evidence"} {
+				if v, ok := reported[f].(string); !ok || strings.TrimSpace(v) == "" {
+					ch.Problems = append(ch.Problems, fmt.Sprintf("The required report field %s is missing or not a string.", f))
+				}
+			}
+			title, _ := reported["title"].(string)
+			evidence, _ := reported["evidence"].(string)
+			if !strings.Contains(title+" "+evidence, "2.4.49") {
 				ch.Problems = append(ch.Problems, "The report does not quote the server version from the tool result (Apache/2.4.49).")
 			}
 			switch sev, _ := reported["severity"].(string); strings.ToLower(sev) {
