@@ -90,6 +90,20 @@ func TestAPIDefinitionImportAndCoverage(t *testing.T) {
 			}
 		}
 	}
+	// Clearing the traffic store does not put new captures behind the cursor.
+	if _, _, err := s.m.Traffic().DeleteAll(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.m.Traffic().DB().Exec(`INSERT INTO exchanges (id,ts,host,method,url_template,url,status,content_type,req_len,resp_len,path)
+		VALUES ('ex-api-9',?,'lab.example','GET','/api/users/{n}','https://lab.example/api/users/5',200,'',0,0,'/api/users/5')`, now); err != nil {
+		t.Fatal(err)
+	}
+	read()
+	for _, o := range got.Operations {
+		if o.Method == "GET" && o.Requests != 6 {
+			t.Fatalf("after clearing traffic: GET requests = %d, want 6", o.Requests)
+		}
+	}
 	apiCoveragePageSize, apiCoveragePages = 20000, 5
 	del := byKey["DELETE /users/{id}"]
 	if w := request("PUT", fmt.Sprintf("%s/api-operations/%d", base, del.ID), `{"mark":"skipped"}`); w.Code != 400 {
