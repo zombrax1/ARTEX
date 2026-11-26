@@ -163,6 +163,25 @@ CREATE INDEX IF NOT EXISTS idx_raw_udp_host  ON raw_udp_datagrams(host);
 CREATE INDEX IF NOT EXISTS idx_raw_udp_ts    ON raw_udp_datagrams(ts DESC, id DESC);
 `
 
+// seqSchema numbers captures in insertion order with a sequence that is never
+// reused, even after rows are deleted (AUTOINCREMENT): readers that keep a
+// cursor on it, such as API coverage, never fall behind new captures. The
+// backfill numbers rows stored before this table existed, in rowid order.
+const seqSchema = `
+CREATE TABLE IF NOT EXISTS exchange_seq (
+  seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+  exchange_id TEXT NOT NULL UNIQUE
+);
+CREATE TRIGGER IF NOT EXISTS exchange_seq_insert AFTER INSERT ON exchanges BEGIN
+  INSERT OR REPLACE INTO exchange_seq (exchange_id) VALUES (NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS exchange_seq_delete AFTER DELETE ON exchanges BEGIN
+  DELETE FROM exchange_seq WHERE exchange_id = OLD.id;
+END;
+INSERT INTO exchange_seq (exchange_id)
+  SELECT e.id FROM exchanges e WHERE NOT EXISTS (SELECT 1 FROM exchange_seq s WHERE s.exchange_id = e.id) ORDER BY e.rowid;
+`
+
 // ftsSchema is applied separately from indexSchema: a driver build without FTS5
 // must degrade to "no full-text search" rather than take the whole recorder down.
 // trigram (not the default unicode61) is required for two reasons this subsystem
@@ -418,6 +437,9 @@ func (t *Traffic) initIndex() error {
 		return err
 	}
 	if err := ensureExchangeRewritesHookColumns(ctx, conn); err != nil {
+		return err
+	}
+	if _, err := conn.ExecContext(ctx, seqSchema); err != nil {
 		return err
 	}
 	if _, err := conn.ExecContext(ctx, ftsSchema); err != nil {
@@ -1165,6 +1187,7 @@ type ExchangeMeta struct {
 	RespLen     int    `json:"resp_len"`
 	Path        string `json:"path"`
 	Rewritten   bool   `json:"rewritten"`
+	Seq         int64  `json:"-"` // storage order; set by After only
 }
 
 const rewrittenExistsSQL = `EXISTS(SELECT 1 FROM exchange_rewrites r WHERE r.exchange_id=exchanges.id AND r.outcome='applied')`
@@ -1191,6 +1214,45 @@ func (t *Traffic) Search(host string, page, size int) ([]ExchangeMeta, error) {
 	for rows.Next() {
 		var m ExchangeMeta
 		if err := rows.Scan(&m.ID, &m.TS, &m.Host, &m.Method, &m.URLTemplate, &m.URL, &m.Status, &m.ContentType, &m.RespLen, &m.Path, &m.Rewritten); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// After returns up to limit exchanges stored after the capture sequence
+// afterSeq and recorded at or after minTS (unix seconds), in storage order,
+// optionally only for the given hosts (host names without port, compared
+// without case; an empty list means every host). The sequence (exchange_seq)
+// grows with every insert and is never reused, even after deletions, so
+// passing the last row's Seq back reads the next page and a capture stored
+// later is never behind the cursor, whatever its ts or id. Bodies are never
+// read.
+func (t *Traffic) After(hosts []string, afterSeq, minTS int64, limit int) ([]ExchangeMeta, error) {
+	if limit <= 0 || limit > 100000 {
+		limit = 20000
+	}
+	q := `SELECT s.seq,e.id,e.ts,e.host,e.method,e.url_template,e.url,e.status,e.content_type,e.resp_len,e.path
+		FROM exchange_seq s JOIN exchanges e ON e.id = s.exchange_id WHERE s.seq>? AND e.ts>=?`
+	args := []any{afterSeq, minTS}
+	if len(hosts) > 0 {
+		q += ` AND lower(e.host) IN (?` + strings.Repeat(",?", len(hosts)-1) + `)`
+		for _, h := range hosts {
+			args = append(args, strings.ToLower(h))
+		}
+	}
+	q += ` ORDER BY s.seq ASC LIMIT ?`
+	args = append(args, limit)
+	rows, err := t.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ExchangeMeta
+	for rows.Next() {
+		var m ExchangeMeta
+		if err := rows.Scan(&m.Seq, &m.ID, &m.TS, &m.Host, &m.Method, &m.URLTemplate, &m.URL, &m.Status, &m.ContentType, &m.RespLen, &m.Path); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
