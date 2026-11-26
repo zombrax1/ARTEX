@@ -1510,6 +1510,8 @@
   "No tasks": "Görev yok",
   "No tasks in this category": "Bu kategoride görev yok",
   "No tasks yet. Click \"New task\" at the top right to start.": "Henüz görev yok. Başlamak için sağ üstteki \"Yeni görev\" düğmesine tıklayın.",
+  "No tasks under the selected company, but {count} task(s) exist under other companies.": "Seçili şirkette görev yok, ancak diğer şirketlerde {count} görev var.",
+  "View all companies": "Tüm şirketleri görüntüle",
   "No templates yet": "Henüz şablon yok",
   "No test accounts": "Test hesabı yok",
   "No test assets in this category yet": "Bu kategoride henüz test varlığı yok",

@@ -1329,9 +1329,14 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	// non-numeric id, or one no task is scoped to, returns an empty list.
 	companyParam := strings.TrimSpace(r.URL.Query().Get("company"))
 	companyID, companyErr := strconv.ParseInt(companyParam, 10, 64)
+	// hiddenByCompany counts tasks that exist but are excluded only by the company
+	// filter, so the client can tell the operator a created task is live under a
+	// different company instead of showing a bare "no tasks" state.
+	hiddenByCompany := 0
 	dtos := make([]TaskDTO, 0, len(list))
 	for _, t := range list {
 		if companyParam != "" && (companyErr != nil || !slices.Contains(t.lifecycleSnapshot().CompanyIDs, companyID)) {
+			hiddenByCompany++
 			continue
 		}
 		dto := taskDTO(t, s.resolvedTaskStatus(t))
@@ -1339,7 +1344,7 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		s.applyTaskMetrics(&dto, t, metrics[t.ExpID])
 		dtos = append(dtos, dto)
 	}
-	writeJSON(w, 200, map[string]any{"tasks": dtos, "active": active})
+	writeJSON(w, 200, map[string]any{"tasks": dtos, "active": active, "hidden_by_company": hiddenByCompany})
 }
 
 // applyTaskMetrics fills the aggregate DTO fields (tokens, goal progress,

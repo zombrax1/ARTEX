@@ -140,7 +140,7 @@ import type {
   TaskStatus,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useActiveCompanyID } from "@/stores/company/company-store";
+import { useActiveCompanyID, useCompanyStore } from "@/stores/company/company-store";
 import { formatTokens as fmtTokens } from "@/lib/format-tokens";
 
 // fmtBytes renders a human file size for the upload manifest.
@@ -305,8 +305,12 @@ function compareTasks(left: Task, right: Task, field: TaskSortField, direction: 
 export default function TasksPage() {
   // The sidebar's company switcher: the server returns only the tasks scoped to it.
   const companyId = useActiveCompanyID();
+  const setCompany = useCompanyStore((s) => s.setCompany);
   const [activeTab, setActiveTab] = React.useState("current");
   const [tasks, setTasks] = React.useState<Task[]>([]);
+  // Tasks that exist but are hidden by the active company filter — used so an
+  // empty list never silently swallows a running task created under another company.
+  const [hiddenByCompany, setHiddenByCompany] = React.useState(0);
   const [categories, setCategories] = React.useState<TaskCategory[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -459,6 +463,9 @@ export default function TasksPage() {
     api
       .tasks(companyId)
       .then((r) => {
+        // Set outside the signature bail-out so the hidden-task hint stays live even
+        // when the visible list is unchanged (e.g. empty under this company filter).
+        setHiddenByCompany(r.hiddenByCompany);
         const next = r.tasks.map((t) => (t.id === r.active ? { ...t, active: true } : t));
         const sig = JSON.stringify(next);
         if (sig === lastRef.current) return;
@@ -956,9 +963,23 @@ export default function TasksPage() {
             </div>
 
             {tasks.length === 0 ? (
-              <div className="text-muted-foreground mx-4 flex items-center justify-center rounded-lg border border-dashed py-20 text-sm lg:mx-6">
-                {t("No tasks yet. Click \"New task\" at the top right to start.")}
-              </div>
+              hiddenByCompany > 0 ? (
+                <div className="text-muted-foreground mx-4 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-20 text-sm lg:mx-6">
+                  <span>
+                    {t(
+                      "No tasks under the selected company, but {count} task(s) exist under other companies.",
+                      { count: hiddenByCompany },
+                    )}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => setCompany(null)}>
+                    {t("View all companies")}
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-muted-foreground mx-4 flex items-center justify-center rounded-lg border border-dashed py-20 text-sm lg:mx-6">
+                  {t("No tasks yet. Click \"New task\" at the top right to start.")}
+                </div>
+              )
             ) : filtered.length === 0 ? (
               <div className="text-muted-foreground mx-4 flex items-center justify-center rounded-lg border border-dashed py-20 text-sm lg:mx-6">
                 {t("No matching tasks.")}

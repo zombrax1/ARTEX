@@ -300,9 +300,13 @@ export const api = {
 
   // ---- tasks ----
   tasks: (companyId: number | null = null) =>
-    get<{ tasks: Task[]; active: string }>(`/tasks${companyId ? `?company=${companyId}` : ""}`).then((r) => ({
+    get<{ tasks: Task[]; active: string; hidden_by_company?: number }>(
+      `/tasks${companyId ? `?company=${companyId}` : ""}`,
+    ).then((r) => ({
       tasks: arr(r.tasks),
       active: r.active ?? "",
+      // Tasks excluded only by the active company filter (0 when viewing all companies).
+      hiddenByCompany: r.hidden_by_company ?? 0,
     })),
   task: (id: string) => get<Task>(`/tasks/${encodeURIComponent(id)}`),
   createTask: (input: {
