@@ -191,9 +191,16 @@ func (p *oaParser) resolve(v map[string]any) map[string]any {
 	return v
 }
 
-func (p *oaParser) schemaType(s map[string]any) string {
+// maxSchemaDepth bounds schema traversal: a schema may reference itself
+// (directly, through allOf or through items), and each step resolves its
+// $ref afresh.
+const maxSchemaDepth = 8
+
+func (p *oaParser) schemaType(s map[string]any) string { return p.schemaTypeAt(s, 0) }
+
+func (p *oaParser) schemaTypeAt(s map[string]any, depth int) string {
 	s = p.resolve(s)
-	if s == nil {
+	if s == nil || depth > maxSchemaDepth {
 		return ""
 	}
 	t := str(s["type"])
@@ -203,7 +210,7 @@ func (p *oaParser) schemaType(s map[string]any) string {
 		}
 	}
 	if t == "array" {
-		if it := p.schemaType(obj(s["items"])); it != "" {
+		if it := p.schemaTypeAt(obj(s["items"]), depth+1); it != "" {
 			return "array<" + it + ">"
 		}
 	}
@@ -215,14 +222,21 @@ func (p *oaParser) schemaType(s map[string]any) string {
 
 // bodyParams lists the top-level properties of a request body schema.
 func (p *oaParser) bodyParams(schema map[string]any, in string) []Param {
+	return p.bodyParamsAt(schema, in, 0)
+}
+
+func (p *oaParser) bodyParamsAt(schema map[string]any, in string, depth int) []Param {
 	schema = p.resolve(schema)
-	if schema == nil {
+	if schema == nil || depth > maxSchemaDepth {
 		return nil
 	}
 	if all := arr(schema["allOf"]); len(all) > 0 {
 		var out []Param
 		for _, s := range all {
-			out = append(out, p.bodyParams(obj(s), in)...)
+			out = append(out, p.bodyParamsAt(obj(s), in, depth+1)...)
+			if len(out) > maxParams {
+				return out[:maxParams]
+			}
 		}
 		return out
 	}
@@ -313,7 +327,12 @@ func (p *oaParser) baseURL() string {
 		}
 		return scheme + "://" + host + base
 	}
-	servers := arr(p.root["servers"])
+	return serverURL(arr(p.root["servers"]))
+}
+
+// serverURL is the first server of an OpenAPI servers list, with its variables
+// set to their defaults, or "" for an empty list.
+func serverURL(servers []any) string {
 	if len(servers) == 0 {
 		return ""
 	}
@@ -347,6 +366,13 @@ func parseOpenAPI(root map[string]any, swagger bool) (*Definition, error) {
 			continue
 		}
 		shared := p.params(arr(item["parameters"]))
+		// OpenAPI 3 servers: operation, then path item, then the root.
+		itemBase := def.BaseURL
+		if !swagger {
+			if u := serverURL(arr(item["servers"])); u != "" {
+				itemBase = u
+			}
+		}
 		for _, m := range methods {
 			op := obj(item[m])
 			if op == nil {
@@ -390,8 +416,14 @@ func parseOpenAPI(root map[string]any, swagger bool) (*Definition, error) {
 			if params == nil {
 				params = []Param{}
 			}
+			base := itemBase
+			if !swagger {
+				if u := serverURL(arr(op["servers"])); u != "" {
+					base = u
+				}
+			}
 			def.Operations = append(def.Operations, Operation{
-				Method: strings.ToUpper(m), Path: path, BaseURL: def.BaseURL,
+				Method: strings.ToUpper(m), Path: path, BaseURL: base,
 				OperationID: str(op["operationId"]), Summary: firstLine(str(op["summary"]), str(op["description"])),
 				Params: params, Auth: auth,
 			})

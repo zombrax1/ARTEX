@@ -136,3 +136,41 @@ func TestMatcher(t *testing.T) {
 		t.Error("in-segment template mismatch")
 	}
 }
+
+func TestParseSelfReferencingSchema(t *testing.T) {
+	doc := `{"openapi":"3.0.0","info":{"title":"loop"},"paths":{"/a":{"post":{"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}}},
+	  "components":{"schemas":{"A":{"allOf":[{"$ref":"#/components/schemas/A"},{"properties":{"x":{"$ref":"#/components/schemas/B"}}}]},
+	  "B":{"type":"array","items":{"$ref":"#/components/schemas/B"}}}}}`
+	def, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(def.Operations) != 1 {
+		t.Fatalf("operations = %+v", def.Operations)
+	}
+}
+
+func TestParseOperationServers(t *testing.T) {
+	doc := `{"openapi":"3.0.0","info":{"title":"s"},"servers":[{"url":"https://example.com/v1"}],"paths":{
+	  "/a":{"get":{}},
+	  "/b":{"servers":[{"url":"https://{env}.example.com/v2","variables":{"env":{"default":"api"}}}],"get":{},"post":{"servers":[{"url":"https://example.com/v3/"}]}}}}`
+	def, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, op := range def.Operations {
+		got[op.Method+" "+op.Path] = op.BaseURL
+	}
+	want := map[string]string{"GET /a": "https://example.com/v1", "GET /b": "https://api.example.com/v2", "POST /b": "https://example.com/v3"}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s base = %q, want %q", k, got[k], v)
+		}
+	}
+	for _, op := range def.Operations {
+		if op.Method == "POST" && op.Path == "/b" && !NewMatcher(op).Match("POST", "example.com", "/v3/b") {
+			t.Error("the operation-level server does not match its own traffic")
+		}
+	}
+}
