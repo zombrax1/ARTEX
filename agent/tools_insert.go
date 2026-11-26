@@ -701,6 +701,8 @@ func (t *ToolSet) WorkerTools() []actool.CoreTool {
 		// Task credentials (#3): reuse user-declared test accounts, record
 		// self-registered ones so they are not forgotten.
 		t.saveTaskCredential(), t.listTaskCredentials(),
+		// Imported API definitions: untested operations and manual coverage marks.
+		t.listAPIOperations(), t.markAPIOperation(),
 		// Cross-work review: a worker can also reuse other works' observations to avoid
 		// duplicate work.
 		// search_all_worker_traces: no need to know an intent_id first — fish out matching

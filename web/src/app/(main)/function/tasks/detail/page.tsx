@@ -40,6 +40,7 @@ import { t } from "@/i18n";
 import { api } from "@/lib/api";
 import type { LLMProfile, Task } from "@/lib/types";
 
+import { ApiTab } from "./_tabs/api-tab";
 import { AssetsTab } from "./_tabs/assets-tab";
 import { BroadcastTab } from "./_tabs/broadcast-tab";
 import { CoverageGraphTab } from "./_tabs/coverage-graph-tab";
@@ -62,6 +63,7 @@ const TABS = [
   { value: "retests", label: t("Retests") },
   { value: "assets", label: t("Test assets") },
   { value: "credentials", label: t("Credentials") },
+  { value: "api", label: t("API") },
   { value: "coverage", label: t("Asset coverage") },
   { value: "intercept", label: t("Interception approval") },
   { value: "report", label: t("Report") },
@@ -460,6 +462,9 @@ function TaskDetailInner() {
         </TabsContent>
         <TabsContent value="credentials" className="mt-0">
           <CredentialsTab taskId={id} />
+        </TabsContent>
+        <TabsContent value="api" className="mt-0">
+          <ApiTab taskId={id} />
         </TabsContent>
         <TabsContent value="coverage" className="mt-0">
           <CoverageGraphTab taskId={id} coverageEnabled={task?.coverage_enabled !== false} />

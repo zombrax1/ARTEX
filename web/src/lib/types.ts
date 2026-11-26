@@ -1314,6 +1314,46 @@ export interface ReadinessReport {
   latency_ms: number;
   stale: boolean; // the profile now uses a different model than the one tested
 }
+// Imported API definitions (OpenAPI 3, Swagger 2, Postman v2) of a task.
+export interface APIDefinition {
+  id: number;
+  task_id: number;
+  name: string;
+  format: "openapi" | "swagger" | "postman";
+  base_url: string;
+  imported_at: string;
+  operations: number;
+}
+export interface APIParam {
+  name: string;
+  in: string; // path | query | header | cookie | body | form
+  required?: boolean;
+  type?: string;
+}
+export type APIOperationStatusName = "tested" | "skipped" | "untested";
+export interface APIOperation {
+  id: number;
+  definition_id: number;
+  method: string;
+  path: string;
+  base_url: string;
+  operation_id?: string;
+  summary?: string;
+  params: APIParam[];
+  auth: boolean;
+  mark: "" | "tested" | "skipped";
+  mark_note?: string;
+  mark_by?: string;
+  status: APIOperationStatusName;
+  requests: number; // matching captured requests since the import
+  last_exchange?: string;
+}
+export interface APICoverage {
+  definitions: APIDefinition[];
+  operations: APIOperation[];
+  summary: { total: number; tested: number; skipped: number; untested: number };
+  traffic_capture: boolean;
+}
 
 export interface OllamaModelInfo {
   tools?: boolean;

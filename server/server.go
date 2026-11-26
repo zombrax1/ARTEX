@@ -226,6 +226,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	// Circuit-breaker thresholds/cooldowns are hot parameters on the failure path; push the global retry policy to the Registry once at startup,
 	// and again on every policy save (saveLLMRetryPolicy).
 	s.applyRetryPolicy()
+	s.installAPICoverage()
 	s.installRepeatGuard()
 	// Every task uses a stable task router. An empty explicit chain is resolved by
 	// that router through Agent bindings and then the global provider, so adding a
@@ -898,6 +899,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{id}/credentials", s.listTaskCredentials)
 	mux.HandleFunc("POST /api/tasks/{id}/credentials", s.addTaskCredential)
 	mux.HandleFunc("DELETE /api/tasks/{id}/credentials/{cid}", s.deleteTaskCredential)
+	mux.HandleFunc("GET /api/tasks/{id}/api-definitions", s.listAPIDefinitions)
+	mux.HandleFunc("POST /api/tasks/{id}/api-definitions", s.importAPIDefinition)
+	mux.HandleFunc("DELETE /api/tasks/{id}/api-definitions/{did}", s.deleteAPIDefinition)
+	mux.HandleFunc("PUT /api/tasks/{id}/api-operations/{oid}", s.markAPIOperation)
 	mux.HandleFunc("POST /api/tasks/{id}/archive", s.queueTaskArchive)
 	mux.HandleFunc("POST /api/tasks/archive/batch", s.queueTaskArchivesBatch)
 	mux.HandleFunc("POST /api/task-archives/{id}/restore", s.queueTaskArchiveRestore)
