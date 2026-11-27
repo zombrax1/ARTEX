@@ -29,7 +29,7 @@ func connectMCP(ctx context.Context, m *db.MCPServer, priv ExecPrivilege) (mcpCl
 		}
 		// Fail fast with an install hint when the command is not installed,
 		// instead of starting a process that cannot run.
-		if err := checkMCPCommand(m.Command); err != nil {
+		if err := checkMCPCommand(m.Command, jsonStrMap(m.Env)); err != nil {
 			return nil, err
 		}
 		// The stdio command runs as the executor identity (see execpriv.go).

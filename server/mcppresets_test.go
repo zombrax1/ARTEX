@@ -90,18 +90,18 @@ func TestMCPInstallHintMatchesPathsAndExtensions(t *testing.T) {
 }
 
 func TestCheckMCPCommand(t *testing.T) {
-	if err := checkMCPCommand(""); err != nil {
+	if err := checkMCPCommand("", nil); err != nil {
 		t.Fatalf("empty command: %v", err)
 	}
-	err := checkMCPCommand("semgrep-definitely-not-installed-artex")
+	err := checkMCPCommand("semgrep-definitely-not-installed-artex", nil)
 	if !errors.Is(err, errMCPCommandMissing) {
 		t.Fatalf("missing command err = %v", err)
 	}
-	if err := checkMCPCommand("unknown-tool-not-here-artex"); err == nil || strings.Contains(err.Error(), "install:") {
+	if err := checkMCPCommand("unknown-tool-not-here-artex", nil); err == nil || strings.Contains(err.Error(), "install:") {
 		t.Fatalf("unknown missing command should fail without a hint: %v", err)
 	}
 	missingPath := filepath.Join(t.TempDir(), "nope", "semgrep")
-	err = checkMCPCommand(missingPath)
+	err = checkMCPCommand(missingPath, nil)
 	if !errors.Is(err, errMCPCommandMissing) || !strings.Contains(err.Error(), "install:") {
 		t.Fatalf("missing absolute path err = %v", err)
 	}
@@ -109,14 +109,40 @@ func TestCheckMCPCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := checkMCPCommand(self); err != nil {
+	if err := checkMCPCommand(self, nil); err != nil {
 		t.Fatalf("existing absolute path: %v", err)
 	}
 	shell := "sh"
 	if runtime.GOOS == "windows" {
 		shell = "cmd"
 	}
-	if err := checkMCPCommand(shell); err != nil {
+	if err := checkMCPCommand(shell, nil); err != nil {
 		t.Fatalf("%s on PATH: %v", shell, err)
+	}
+}
+
+func TestCheckMCPCommandUsesConfiguredPath(t *testing.T) {
+	dir := t.TempDir()
+	name := "artex-fake-mcp-server"
+	file := name
+	if runtime.GOOS == "windows" {
+		file += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(dir, file), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkMCPCommand(name, nil); err == nil {
+		t.Fatal("command outside ARTEX's PATH was found without the configured PATH")
+	}
+	if err := checkMCPCommand(name, map[string]string{"PATH": dir}); err != nil {
+		t.Fatalf("command on the configured PATH: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(filepath.Join(dir, file), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := checkMCPCommand(name, map[string]string{"PATH": dir}); err == nil {
+			t.Fatal("a non-executable file counted as installed")
+		}
 	}
 }

@@ -190,18 +190,16 @@ var errMCPCommandMissing = errors.New("command not found")
 
 // checkMCPCommand reports a clear, actionable error when a stdio command is not
 // installed, so a missing binary fails at once with an install hint instead of
-// a process start that errors (or hangs) on every agent run.
-func checkMCPCommand(command string) error {
+// a process start that errors (or hangs) on every agent run. env is the row's
+// configured environment: the server starts the command with it (directly, or
+// through the privilege-drop shim, which resolves the command on the same
+// environment), so a PATH (and on Windows PATHEXT) set there is searched
+// instead of ARTEX's own.
+func checkMCPCommand(command string, env map[string]string) error {
 	if command == "" {
 		return nil
 	}
-	var err error
-	if filepath.IsAbs(command) || strings.ContainsAny(command, `/\`) {
-		_, err = os.Stat(command)
-	} else {
-		_, err = exec.LookPath(command)
-	}
-	if err == nil {
+	if lookupMCPCommand(command, env) {
 		return nil
 	}
 	msg := fmt.Sprintf("%q is not installed or not on PATH", command)
@@ -209,6 +207,73 @@ func checkMCPCommand(command string) error {
 		msg += "; install: " + hint
 	}
 	return fmt.Errorf("%w: %s", errMCPCommandMissing, msg)
+}
+
+// envLookup returns a variable of env, matching the name without regard to
+// case on Windows as the OS does.
+func envLookup(env map[string]string, name string) (string, bool) {
+	if v, ok := env[name]; ok {
+		return v, true
+	}
+	if runtime.GOOS == "windows" {
+		for k, v := range env {
+			if strings.EqualFold(k, name) {
+				return v, true
+			}
+		}
+	}
+	return "", false
+}
+
+func lookupMCPCommand(command string, env map[string]string) bool {
+	if filepath.IsAbs(command) || strings.ContainsAny(command, `/\`) {
+		// exec.LookPath checks a path as given (adding PATHEXT on Windows).
+		if _, err := exec.LookPath(command); err == nil {
+			return true
+		}
+		_, err := os.Stat(command)
+		return err == nil
+	}
+	path, ok := envLookup(env, "PATH")
+	if !ok {
+		_, err := exec.LookPath(command)
+		return err == nil
+	}
+	var exts []string
+	if runtime.GOOS == "windows" {
+		pathext, ok := envLookup(env, "PATHEXT")
+		if !ok {
+			pathext = os.Getenv("PATHEXT")
+		}
+		if pathext == "" {
+			pathext = ".com;.exe;.bat;.cmd"
+		}
+		exts = append([]string{""}, strings.Split(pathext, ";")...)
+	} else {
+		exts = []string{""}
+	}
+	for _, dir := range filepath.SplitList(path) {
+		if dir == "" {
+			dir = "."
+		}
+		for _, ext := range exts {
+			if mcpIsExecutable(filepath.Join(dir, command+ext)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func mcpIsExecutable(p string) bool {
+	fi, err := os.Stat(p)
+	if err != nil || fi.IsDir() {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	return fi.Mode().Perm()&0o111 != 0
 }
 
 func (s *Server) presetStatuses() ([]mcpPresetStatus, error) {
@@ -228,7 +293,7 @@ func (s *Server) presetStatuses() ([]mcpPresetStatus, error) {
 	for _, p := range presets {
 		st := mcpPresetStatus{mcpPreset: p, AddedID: byName[p.Name]}
 		if p.Transport == "stdio" {
-			ok := checkMCPCommand(p.Command) == nil
+			ok := checkMCPCommand(p.Command, nil) == nil
 			st.Installed = &ok
 		}
 		out = append(out, st)
@@ -257,7 +322,7 @@ func (s *Server) checkEnabledMCPCommandsOnStartup(servers []*db.MCPServer) {
 		if !m.Enabled || m.Transport != "stdio" {
 			continue
 		}
-		if err := checkMCPCommand(m.Command); err != nil {
+		if err := checkMCPCommand(m.Command, jsonStrMap(m.Env)); err != nil {
 			_ = s.m.pg.UpdateMCPHealth(m.ID, false, err.Error())
 		}
 	}
