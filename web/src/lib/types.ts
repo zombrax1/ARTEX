@@ -1484,6 +1484,29 @@ export interface MCPServer {
   tools?: string[]; // mcp_tools_cache (names only, for the count)
 }
 
+// A ready-made MCP server entry (GET /api/mcp/presets). Picking one fills the
+// add form; nothing is added or enabled until the user saves it.
+export interface MCPPreset {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  category: string;
+  license: string;
+  homepage: string;
+  transport: "stdio" | "http" | "sse";
+  command?: string;
+  args: string[];
+  env: Record<string, string>;
+  url?: string;
+  required_env?: string[];
+  placeholders?: string[];
+  setup?: string;
+  install?: string;
+  installed?: boolean; // stdio only: the command is on PATH
+  added_id?: number; // id of an existing row with this name
+}
+
 export interface MCPTool {
   name: string;
   description: string;

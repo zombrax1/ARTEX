@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { PlusIcon, RefreshCwIcon, ServerIcon, Trash2Icon } from "lucide-react";
+import { ExternalLinkIcon, PackageIcon, PlusIcon, RefreshCwIcon, ServerIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { intlLocale, t } from "@/i18n";
 import { api } from "@/lib/api";
-import type { MCPServer, MCPTool, Agent } from "@/lib/types";
+import type { MCPPreset, MCPServer, MCPTool, Agent } from "@/lib/types";
 
 type Transport = "stdio" | "http" | "sse";
 type FormState = {
@@ -50,6 +50,8 @@ export default function MCPPage() {
   const [servers, setServers] = React.useState<MCPServer[]>([]);
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [visibility, setVisibility] = React.useState<Record<number, string[]>>({});
+  const [presets, setPresets] = React.useState<MCPPreset[]>([]);
+  const [preset, setPreset] = React.useState<MCPPreset | null>(null); // preset the add form came from
 
   const [open, setOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<MCPServer | null>(null); // null = add mode
@@ -62,6 +64,7 @@ export default function MCPPage() {
 
   const load = React.useCallback(() => {
     api.agents().then(setAgents).catch(() => {});
+    api.mcpPresets().then(setPresets).catch(() => {});
     api
       .mcpServers()
       .then((ss) => {
@@ -104,7 +107,31 @@ export default function MCPPage() {
 
   function openAdd() {
     setEditing(null);
+    setPreset(null);
     setForm(emptyForm);
+    setTools([]);
+    setTab("config");
+    setOpen(true);
+  }
+
+  function openPreset(p: MCPPreset) {
+    const existing = p.added_id ? servers.find((s) => s.id === p.added_id) : undefined;
+    if (existing) {
+      openEdit(existing);
+      return;
+    }
+    setEditing(null);
+    setPreset(p);
+    setForm({
+      name: p.name,
+      transport: p.transport,
+      command: p.command ?? "",
+      args: (p.args ?? []).join(" "),
+      url: p.url ?? "",
+      env: envToText(p.env),
+      insecure: false,
+      timeoutSeconds: "",
+    });
     setTools([]);
     setTab("config");
     setOpen(true);
@@ -112,6 +139,7 @@ export default function MCPPage() {
 
   function openEdit(s: MCPServer) {
     setEditing(s);
+    setPreset(null);
     setForm({
       name: s.name,
       transport: s.transport,
@@ -150,6 +178,20 @@ export default function MCPPage() {
     if (form.transport !== "stdio" && !form.url.trim()) {
       toast.error(t("Please fill in the remote URL"));
       return;
+    }
+    if (preset && !editing) {
+      const env = parseEnv(form.env);
+      const missingKey = (preset.required_env ?? []).find((k) => !env[k]);
+      if (missingKey) {
+        toast.error(t("Fill in {key} before adding this server", { key: missingKey }));
+        return;
+      }
+      const args = form.args.trim().split(/\s+/);
+      const placeholder = (preset.placeholders ?? []).find((ph) => args.includes(ph));
+      if (form.transport === "stdio" && placeholder) {
+        toast.error(t("Replace {placeholder} in the arguments before adding this server", { placeholder }));
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -242,6 +284,7 @@ export default function MCPPage() {
   function renderForm() {
     return (
       <div className="grid gap-4 py-4">
+        {preset && !editing && renderPresetNotice(preset)}
         <div className="grid gap-2">
           <Label>{t("Transport")}</Label>
           <div className="flex gap-2">
@@ -348,6 +391,96 @@ export default function MCPPage() {
     );
   }
 
+  function presetStatus(p: MCPPreset): { label: string; tone: "secondary" | "destructive" | "outline" } {
+    if (p.installed === false) return { label: t("Not installed"), tone: "destructive" };
+    if (p.added_id) return { label: t("Added"), tone: "secondary" };
+    if (p.required_env?.length) return { label: t("Needs an API key"), tone: "outline" };
+    if (p.setup) return { label: t("Needs setup"), tone: "outline" };
+    return { label: t("Ready to add"), tone: "outline" };
+  }
+
+  function renderPresetNotice(p: MCPPreset) {
+    return (
+      <div className="bg-muted/50 grid gap-2 rounded-md border p-3 text-sm">
+        <p>{p.description}</p>
+        {p.setup && <p>{t("Before you start: {note}", { note: p.setup })}</p>}
+        {p.install && p.installed === false && (
+          <p className="text-destructive">{t("Install: {command}", { command: p.install })}</p>
+        )}
+        {(p.required_env ?? []).length > 0 && (
+          <p>{t("Fill in {key} before adding this server", { key: (p.required_env ?? []).join(", ") })}</p>
+        )}
+        <a
+          href={p.homepage}
+          target="_blank"
+          rel="noreferrer"
+          className="text-primary inline-flex items-center gap-1 underline-offset-2 hover:underline"
+        >
+          <ExternalLinkIcon className="size-3.5" /> {t("Project page")} · {p.license}
+        </a>
+      </div>
+    );
+  }
+
+  function renderPresets() {
+    if (presets.length === 0) return null;
+    return (
+      <div className="grid gap-3">
+        <div>
+          <h2 className="text-base font-semibold">{t("Built-in servers")}</h2>
+          <p className="text-muted-foreground text-sm">
+            {t(
+              "Free MCP servers ARTEX knows how to run. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.",
+            )}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {presets.map((p) => {
+            const st = presetStatus(p);
+            return (
+              <Card key={p.id} className="gap-2">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <PackageIcon className="text-muted-foreground size-4 shrink-0" />
+                    <CardTitle className="truncate text-base">{p.title}</CardTitle>
+                    <Badge variant="outline" className="font-normal" lang="en">
+                      {p.category}
+                    </Badge>
+                    <Badge variant={st.tone} className="ml-auto font-normal">
+                      {st.label}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid gap-3">
+                  <p className="text-muted-foreground text-sm">{p.description}</p>
+                  {p.installed === false && p.install && (
+                    <p className="text-muted-foreground font-mono text-xs break-words">
+                      {t("Install: {command}", { command: p.install })}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant={p.added_id ? "outline" : "default"} onClick={() => openPreset(p)}>
+                      {p.added_id ? (
+                        t("Open")
+                      ) : (
+                        <>
+                          <PlusIcon /> {t("Add")}
+                        </>
+                      )}
+                    </Button>
+                    <span className="text-muted-foreground text-xs" lang="en">
+                      {p.license}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   function renderTools() {
     return (
       <div className="flex flex-col gap-3 py-4">
@@ -386,6 +519,9 @@ export default function MCPPage() {
         <p className="text-muted-foreground text-sm">{t("External MCP tool servers · visibility granted per agent")}</p>
       </div>
 
+      {renderPresets()}
+
+      <h2 className="text-base font-semibold">{t("Your servers")}</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <button
           type="button"
@@ -468,7 +604,7 @@ export default function MCPPage() {
           className="w-full data-[side=right]:sm:max-w-lg"
         >
           <SheetHeader>
-            <SheetTitle>{editing ? editing.name : t("Add MCP server")}</SheetTitle>
+            <SheetTitle>{editing ? editing.name : preset ? preset.title : t("Add MCP server")}</SheetTitle>
             <SheetDescription>
               {t("stdio (local process) or http (remote Streamable HTTP)")}
             </SheetDescription>

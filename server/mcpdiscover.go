@@ -27,6 +27,11 @@ func connectMCP(ctx context.Context, m *db.MCPServer, priv ExecPrivilege) (mcpCl
 		if m.Command == "" {
 			return nil, fmt.Errorf("stdio transport is missing a command")
 		}
+		// Fail fast with an install hint when the command is not installed,
+		// instead of starting a process that cannot run.
+		if err := checkMCPCommand(m.Command, jsonStrMap(m.Env)); err != nil {
+			return nil, err
+		}
 		// The stdio command runs as the executor identity (see execpriv.go).
 		command, args, err := execDropCommand(priv, m.Command, jsonStrSlice(m.Args))
 		if err != nil {
@@ -87,6 +92,7 @@ func (s *Server) discoverEmptyMCPsOnStartup() {
 		log.Printf("[mcp] startup auto-discovery: failed to read the list: %v", err)
 		return
 	}
+	s.checkEnabledMCPCommandsOnStartup(servers)
 	for _, m := range servers {
 		if !m.Enabled || len(m.Tools) > 0 {
 			continue
