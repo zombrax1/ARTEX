@@ -81,6 +81,14 @@ export default function MCPPage() {
   React.useEffect(() => {
     load();
   }, [load]);
+  // While ARTEX installs servers on its own, refresh the cards and the server
+  // list until it is done.
+  const installing = presets.some((p) => p.auto_install?.state === "installing");
+  React.useEffect(() => {
+    if (!installing) return;
+    const id = window.setInterval(load, 5000);
+    return () => window.clearInterval(id);
+  }, [installing, load]);
 
   function setF(patch: Partial<FormState>) {
     setForm((f) => ({ ...f, ...patch }));
@@ -392,7 +400,11 @@ export default function MCPPage() {
   }
 
   function presetStatus(p: MCPPreset): { label: string; tone: "secondary" | "destructive" | "outline" } {
+    if (p.auto_install?.state === "installing") return { label: t("Installing…"), tone: "secondary" };
+    if (p.auto_install?.state === "failed") return { label: t("Install failed"), tone: "destructive" };
     if (p.installed === false) return { label: t("Not installed"), tone: "destructive" };
+    if (!p.added_id && (p.missing ?? []).length > 0)
+      return { label: t("Needs {program}", { program: (p.missing ?? []).join(", ") }), tone: "outline" };
     if (p.added_id) return { label: t("Added"), tone: "secondary" };
     if (p.required_env?.length) return { label: t("Needs an API key"), tone: "outline" };
     if (p.setup) return { label: t("Needs setup"), tone: "outline" };
@@ -405,12 +417,36 @@ export default function MCPPage() {
     return t("Paid");
   }
 
+  // What ARTEX's own installer did for a server it installs by itself.
+  function renderAutoInstallNote(p: MCPPreset) {
+    const st = p.auto_install;
+    if (!st) return null;
+    if (st.state === "installing")
+      return <p className="text-muted-foreground text-xs">{t("ARTEX is installing this server…")}</p>;
+    if (st.state === "failed" || st.state === "unavailable")
+      return (
+        <p className="text-destructive text-xs break-words">
+          {t("ARTEX could not install it: {reason}", { reason: st.message ?? "" })}
+        </p>
+      );
+    if ((p.missing ?? []).length > 0)
+      return (
+        <p className="text-muted-foreground text-xs">
+          {t("Installed. ARTEX adds it once {program} is installed on this computer.", {
+            program: (p.missing ?? []).join(", "),
+          })}
+        </p>
+      );
+    return null;
+  }
+
   function renderPresetNotice(p: MCPPreset) {
     return (
       <div className="bg-muted/50 grid gap-2 rounded-md border p-3 text-sm">
         <p>{p.description}</p>
         {p.cost_note && <p>{p.cost_note}</p>}
         {p.setup && <p>{t("Before you start: {note}", { note: p.setup })}</p>}
+        {renderAutoInstallNote(p)}
         {p.install && p.installed === false && (
           <p className="text-destructive">{t("Install: {command}", { command: p.install })}</p>
         )}
@@ -438,6 +474,9 @@ export default function MCPPage() {
           <p className="text-muted-foreground text-sm">
             {t(
               "Open-source MCP servers ARTEX knows how to run. Most are free with no account; some use a free or paid API key. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.",
+            )}{" "}
+            {t(
+              "The free servers that need no key are installed and added by ARTEX itself when it starts. Set ARTEX_MCP_AUTOINSTALL=off to turn this off.",
             )}
           </p>
         </div>
@@ -460,6 +499,7 @@ export default function MCPPage() {
                 </CardHeader>
                 <CardContent className="grid gap-3">
                   <p className="text-muted-foreground text-sm">{p.description}</p>
+                  {renderAutoInstallNote(p)}
                   {p.installed === false && p.install && (
                     <p className="text-muted-foreground font-mono text-xs break-words">
                       {t("Install: {command}", { command: p.install })}

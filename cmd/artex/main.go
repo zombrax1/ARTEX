@@ -119,6 +119,9 @@ func run() int {
 	// Windows: no 8.3 short names in the data directory, which agent shells run in
 	// (server.LongPath).
 	*dataDir = server.LongPath(*dataDir)
+	// The MCP servers ARTEX installs itself live in <data>/mcp-tools: put their
+	// folders on PATH before anything resolves a command (server/mcptools.go).
+	server.AddMCPToolsToPath(*dataDir)
 
 	// hand the build version to the server package so GET /api/health can report it
 	// to the frontend top bar.
@@ -229,7 +232,7 @@ func run() int {
 	}
 	defer mgr.Close()
 
-	srv := server.New(ctx, mgr, skillDir, *dataDir, keyDir, server.WithSecretScrub(), server.WithTrustedProxies(trusted), server.WithExecPrivilege(priv), server.WithIsolationStatus(isolation))
+	srv := server.New(ctx, mgr, skillDir, *dataDir, keyDir, server.WithSecretScrub(), server.WithTrustedProxies(trusted), server.WithExecPrivilege(priv), server.WithIsolationStatus(isolation), server.WithMCPAutoInstall(*dataDir))
 	// ReadTimeout bounds how long the request headers and body may take to arrive.
 	// It does not limit how long a handler runs, so an event stream stays open.
 	// WriteTimeout is left unset: a write deadline would cut that stream.

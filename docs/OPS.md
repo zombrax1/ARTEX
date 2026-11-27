@@ -40,6 +40,7 @@ boundary and trusted proxies. No password or token value is ever logged there.
 | Untrusted-output boundary | on by default; `ARTEX_UNTRUSTED_BOUNDARY=0\|false\|off\|no` disables it | `agent/untrusted_boundary.go` |
 | Trusted proxies for login rate limit | `ARTEX_TRUSTED_PROXIES` (comma-separated IPs/CIDRs; empty trusts none) | `server.ParseTrustedProxies` |
 | Target user agent | `ARTEX_TARGET_USER_AGENT` (applied by non-`off` noise profiles) | `egress.ProfileByName` |
+| Built-in MCP server install | `ARTEX_MCP_AUTOINSTALL` (`off\|0\|false\|no` installs and adds nothing; otherwise the free keyless presets are installed into `<data>/mcp-tools` and added once) | `server.MCPAutoInstallEnabled` |
 | GPU metrics on the dashboard | `ARTEX_GPU_METRICS` (`off` never runs `nvidia-smi` / `rocm-smi`; anything else reads them when on PATH) | `server.gpuMetricsDisabled` |
 | Budgets | `ARTEX_TASK_BUDGET_TOKENS` / `_TURNS`, `ARTEX_INTENT_BUDGET_TOKENS` / `_TURNS` | `agent/budget.go` |
 | Live model judge test | `ARTEX_REVIEW_LIVE_CONFIG` (opt-in integration test only) | `server/intercept_live_test.go` |

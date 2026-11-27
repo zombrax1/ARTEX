@@ -15,7 +15,8 @@ import (
 
 // mcpPreset is a ready-made MCP server entry the UI can add in one step. The
 // catalog only holds free servers with a verified package, transport and
-// license. Nothing is added or enabled on its own: the user picks a preset,
+// license. The Auto ones (free, no key, nothing else to run) are installed and
+// added by ARTEX itself (mcptools.go); for the rest the user picks a preset,
 // fills in what it needs (an API key, a path) and saves it as a normal row.
 type mcpPreset struct {
 	ID          string            `json:"id"`
@@ -42,6 +43,12 @@ type mcpPreset struct {
 	Cost string `json:"cost"`
 	// CostNote says what a free key or plan covers, when Cost is not "free".
 	CostNote string `json:"cost_note,omitempty"`
+	// Auto: ARTEX installs this server into its tools folder and adds it when
+	// it starts (unless ARTEX_MCP_AUTOINSTALL=off).
+	Auto bool `json:"auto,omitempty"`
+	// Requires are other programs the server runs, which ARTEX cannot install
+	// (nmap). An Auto preset is only added once they are on PATH.
+	Requires []string `json:"requires,omitempty"`
 }
 
 // mcpPresetStatus is a preset plus what this machine has for it.
@@ -51,6 +58,11 @@ type mcpPresetStatus struct {
 	Installed *bool `json:"installed,omitempty"`
 	// AddedID is the id of an existing row with the preset's name, or 0.
 	AddedID int64 `json:"added_id,omitempty"`
+	// AutoInstall is what ARTEX's installer did for an Auto preset since it
+	// started; nil when it has not looked at it (or auto-install is off).
+	AutoInstall *mcpInstallState `json:"auto_install,omitempty"`
+	// Missing lists the Requires programs that are not on PATH.
+	Missing []string `json:"missing,omitempty"`
 }
 
 func pythonCommand(goos string) string {
@@ -68,6 +80,7 @@ func mcpPresets(goos string) []mcpPreset {
 		{
 			ID:          "playwright",
 			Cost:        "free",
+			Auto:        true,
 			Name:        "browser",
 			Title:       "Playwright (browser)",
 			Description: "Drives a real Chromium browser: open pages, click, fill forms, read the page and take screenshots.",
@@ -83,6 +96,7 @@ func mcpPresets(goos string) []mcpPreset {
 		{
 			ID:          "semgrep",
 			Cost:        "free",
+			Auto:        true,
 			Name:        "semgrep",
 			Title:       "Semgrep",
 			Description: "Static analysis: scans source code for vulnerabilities and insecure patterns with Semgrep's open rules. No account needed for local scans.",
@@ -98,6 +112,7 @@ func mcpPresets(goos string) []mcpPreset {
 		{
 			ID:          "osv-scanner",
 			Cost:        "free",
+			Auto:        true,
 			Name:        "osv-scanner",
 			Title:       "OSV-Scanner",
 			Description: "Google's dependency scanner: finds known vulnerabilities in a project's lockfiles and manifests using the free OSV.dev database, and explains each one. No account or key.",
@@ -113,6 +128,7 @@ func mcpPresets(goos string) []mcpPreset {
 		{
 			ID:          "trivy",
 			Cost:        "free",
+			Auto:        true,
 			Name:        "trivy",
 			Title:       "Trivy",
 			Description: "Aqua Security's open-source scanner: vulnerabilities, misconfigurations and secrets in folders, container images and remote repositories. No account or key.",
@@ -120,15 +136,15 @@ func mcpPresets(goos string) []mcpPreset {
 			License:     "MIT",
 			Homepage:    "https://github.com/aquasecurity/trivy-mcp",
 			Transport:   "stdio",
-			Command:     "trivy",
-			Args:        []string{"mcp"},
+			Command:     "trivy-mcp",
+			Args:        []string{},
 			Env:         map[string]string{},
-			Setup:       trivyPluginSetup(goos),
-			Install:     mcpInstallHint("trivy", goos),
+			Install:     mcpInstallHint("trivy-mcp", goos),
 		},
 		{
 			ID:          "nmap",
 			Cost:        "free",
+			Auto:        true,
 			Name:        "nmap",
 			Title:       "Nmap",
 			Description: "Port and service scanning through python-nmap: host discovery, port scans, version detection and XML parsing. Needs nmap itself installed. Scan only networks you are allowed to test.",
@@ -139,6 +155,7 @@ func mcpPresets(goos string) []mcpPreset {
 			Command:     "mcp-server-nmap",
 			Args:        []string{},
 			Env:         map[string]string{},
+			Requires:    []string{"nmap"},
 			Install:     mcpInstallHint("mcp-server-nmap", goos),
 		},
 		{
@@ -211,20 +228,6 @@ func mcpPresets(goos string) []mcpPreset {
 	}
 }
 
-// trivyPluginSetup explains where the Trivy MCP plugin must be installed. Trivy
-// looks for plugins in $XDG_DATA_HOME/.trivy/plugins, or ~/.trivy/plugins of the
-// user running it. With agent isolation on, ARTEX starts stdio servers as its
-// executor identity (its own home on Linux/macOS, a separate account on
-// Windows), so the plugin goes in a shared folder that identity can read, named
-// by XDG_DATA_HOME both when installing and in the server's environment.
-func trivyPluginSetup(goos string) string {
-	const base = "The MCP server is a Trivy plugin. Without agent isolation, run `trivy plugin install mcp` once as the user that runs ARTEX. With agent isolation on, agent tools run as a separate identity that cannot see your home folder, so install the plugin into a shared folder instead: "
-	if goos == "windows" {
-		return base + "in Command Prompt run `set XDG_DATA_HOME=C:\\ProgramData\\trivy` and then `trivy plugin install mcp`, and add XDG_DATA_HOME=C:\\ProgramData\\trivy to this server's environment variables."
-	}
-	return base + "run `sudo env XDG_DATA_HOME=/opt/trivy trivy plugin install mcp`, and add XDG_DATA_HOME=/opt/trivy to this server's environment variables. The folder must be readable by the agent identity."
-}
-
 // browserMCPCommandName is the seeded browser row's binary (db/browser_mcp.go).
 const browserMCPCommandName = "playwright-mcp"
 
@@ -255,13 +258,9 @@ func mcpInstallHint(command, goos string) string {
 			return "download osv-scanner_windows_amd64.exe from https://github.com/google/osv-scanner/releases, rename it to osv-scanner.exe and put it on PATH (or: go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest)"
 		}
 		return "go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest (or a release binary from https://github.com/google/osv-scanner/releases)"
+	case "trivy-mcp":
+		return "download trivy-mcp-" + goos + "-<arch>.tar.gz from https://github.com/aquasecurity/trivy-mcp/releases and put trivy-mcp on PATH (it includes Trivy; no separate install needed)"
 	case "trivy":
-		switch goos {
-		case "darwin":
-			return "brew install trivy, then: trivy plugin install mcp"
-		case "windows":
-			return "download Trivy from https://github.com/aquasecurity/trivy/releases and put trivy.exe on PATH, then: trivy plugin install mcp"
-		}
 		return "install Trivy (https://trivy.dev/latest/getting-started/installation/), then: trivy plugin install mcp"
 	case "mcp-server-nmap":
 		nmap := "install nmap from https://nmap.org/download"
@@ -392,10 +391,13 @@ func (s *Server) presetStatuses() ([]mcpPresetStatus, error) {
 	presets := mcpPresets(runtime.GOOS)
 	out := make([]mcpPresetStatus, 0, len(presets))
 	for _, p := range presets {
-		st := mcpPresetStatus{mcpPreset: p, AddedID: byName[p.Name]}
+		st := mcpPresetStatus{mcpPreset: p, AddedID: byName[p.Name], Missing: mcpMissingRequires(p)}
 		if p.Transport == "stdio" {
 			ok := checkMCPCommand(p.Command, nil) == nil
 			st.Installed = &ok
+		}
+		if is, ok := s.toolInstaller.state(p.ID); ok {
+			st.AutoInstall = &is
 		}
 		out = append(out, st)
 	}
