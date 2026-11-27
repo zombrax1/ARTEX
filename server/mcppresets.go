@@ -212,15 +212,17 @@ func mcpPresets(goos string) []mcpPreset {
 }
 
 // trivyPluginSetup explains where the Trivy MCP plugin must be installed. Trivy
-// looks for plugins in ~/.trivy/plugins of the user that runs it, and with agent
-// isolation on, ARTEX starts stdio servers as its executor identity with that
-// identity's home, so the plugin has to be installed there too.
+// looks for plugins in $XDG_DATA_HOME/.trivy/plugins, or ~/.trivy/plugins of the
+// user running it. With agent isolation on, ARTEX starts stdio servers as its
+// executor identity (its own home on Linux/macOS, a separate account on
+// Windows), so the plugin goes in a shared folder that identity can read, named
+// by XDG_DATA_HOME both when installing and in the server's environment.
 func trivyPluginSetup(goos string) string {
-	const base = "The MCP server is a Trivy plugin, which Trivy looks for in ~/.trivy/plugins of the user running it. Install it for the identity that runs ARTEX's agent tools. Without agent isolation, run `trivy plugin install mcp` as the user that runs ARTEX. "
+	const base = "The MCP server is a Trivy plugin. Without agent isolation, run `trivy plugin install mcp` once as the user that runs ARTEX. With agent isolation on, agent tools run as a separate identity that cannot see your home folder, so install the plugin into a shared folder instead: "
 	if goos == "windows" {
-		return base + "With agent isolation on, run it as the agent account: runas /user:artex-agent \"trivy plugin install mcp\" (use your account name if you chose another one)."
+		return base + "in Command Prompt run `set XDG_DATA_HOME=C:\\ProgramData\\trivy` and then `trivy plugin install mcp`, and add XDG_DATA_HOME=C:\\ProgramData\\trivy to this server's environment variables."
 	}
-	return base + "With agent isolation on (ARTEX started as root), run it with the executor's home: sudo env HOME=<ARTEX data dir>/exec-home trivy plugin install mcp"
+	return base + "run `sudo env XDG_DATA_HOME=/opt/trivy trivy plugin install mcp`, and add XDG_DATA_HOME=/opt/trivy to this server's environment variables. The folder must be readable by the agent identity."
 }
 
 // browserMCPCommandName is the seeded browser row's binary (db/browser_mcp.go).
