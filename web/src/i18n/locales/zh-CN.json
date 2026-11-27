@@ -2885,6 +2885,9 @@
   "Install: {command}": "安装：{command}",
   "Project page": "项目主页",
   "Built-in servers": "内置服务器",
-  "Free MCP servers ARTEX knows how to run. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.": "ARTEX 内置的免费 MCP 服务器。选择一个，填写所需内容后添加。已启用的服务器会在 ARTEX 启动时检查，并随每个可见它的智能体运行一起启动。",
-  "Your servers": "我的服务器"
+  "Your servers": "我的服务器",
+  "Open-source MCP servers ARTEX knows how to run. Most are free with no account; some use a free or paid API key. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.": "ARTEX 内置的开源 MCP 服务器。大多数免费且无需账号；部分需要免费或付费的 API 密钥。选择一个，填写所需内容后添加。已启用的服务器会在 ARTEX 启动时检查，并随每个可见它的智能体运行一起启动。",
+  "Free": "免费",
+  "Free API key": "免费 API 密钥",
+  "Paid": "付费"
 }

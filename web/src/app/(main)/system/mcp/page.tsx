@@ -399,10 +399,17 @@ export default function MCPPage() {
     return { label: t("Ready to add"), tone: "outline" };
   }
 
+  function costLabel(p: MCPPreset): string {
+    if (p.cost === "free") return t("Free");
+    if (p.cost === "free_key") return t("Free API key");
+    return t("Paid");
+  }
+
   function renderPresetNotice(p: MCPPreset) {
     return (
       <div className="bg-muted/50 grid gap-2 rounded-md border p-3 text-sm">
         <p>{p.description}</p>
+        {p.cost_note && <p>{p.cost_note}</p>}
         {p.setup && <p>{t("Before you start: {note}", { note: p.setup })}</p>}
         {p.install && p.installed === false && (
           <p className="text-destructive">{t("Install: {command}", { command: p.install })}</p>
@@ -430,7 +437,7 @@ export default function MCPPage() {
           <h2 className="text-base font-semibold">{t("Built-in servers")}</h2>
           <p className="text-muted-foreground text-sm">
             {t(
-              "Free MCP servers ARTEX knows how to run. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.",
+              "Open-source MCP servers ARTEX knows how to run. Most are free with no account; some use a free or paid API key. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.",
             )}
           </p>
         </div>
@@ -468,6 +475,9 @@ export default function MCPPage() {
                         </>
                       )}
                     </Button>
+                    <Badge variant={p.cost === "free" ? "secondary" : "outline"} className="font-normal">
+                      {costLabel(p)}
+                    </Badge>
                     <span className="text-muted-foreground text-xs" lang="en">
                       {p.license}
                     </span>

@@ -3278,6 +3278,7 @@ export const mcpPresets: MCPPreset[] = [
     args: ["mcp"],
     env: {},
     install: "python3 -m pip install semgrep (or: pipx install semgrep)",
+    cost: "free",
     installed: false,
   },
   {
@@ -3293,6 +3294,8 @@ export const mcpPresets: MCPPreset[] = [
     args: ["-y", "@burtthecoder/mcp-virustotal"],
     env: { VIRUSTOTAL_API_KEY: "" },
     required_env: ["VIRUSTOTAL_API_KEY"],
+    cost: "free_key",
+    cost_note: "The free public API key allows 4 lookups a minute and 500 a day.",
     installed: true,
   },
   {
@@ -3308,6 +3311,7 @@ export const mcpPresets: MCPPreset[] = [
     args: [],
     env: {},
     setup: "Install the MCP Server extension in Burp Suite and keep Burp running with it enabled.",
+    cost: "free",
   },
 ];
 

@@ -1503,6 +1503,8 @@ export interface MCPPreset {
   placeholders?: string[];
   setup?: string;
   install?: string;
+  cost: "free" | "free_key" | "paid"; // free: no account or key; free_key: a free account's key is enough
+  cost_note?: string;
   installed?: boolean; // stdio only: the command is on PATH
   added_id?: number; // id of an existing row with this name
 }

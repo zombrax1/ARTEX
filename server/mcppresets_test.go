@@ -16,6 +16,15 @@ func TestMCPPresetsCatalogIsConsistent(t *testing.T) {
 			if p.ID == "" || p.Name == "" || p.Title == "" || p.License == "" || p.Homepage == "" {
 				t.Fatalf("%s: preset %+v is missing metadata", goos, p)
 			}
+			switch p.Cost {
+			case "free":
+			case "free_key", "paid":
+				if p.CostNote == "" && len(p.RequiredEnv) == 0 {
+					t.Fatalf("%s: preset %s costs %s but says nothing about it", goos, p.ID, p.Cost)
+				}
+			default:
+				t.Fatalf("%s: preset %s has cost %q", goos, p.ID, p.Cost)
+			}
 			if ids[p.ID] || names[p.Name] {
 				t.Fatalf("%s: duplicate preset id or name %q/%q", goos, p.ID, p.Name)
 			}
