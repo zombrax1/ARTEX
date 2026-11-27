@@ -736,9 +736,11 @@ func (s *Server) autoAddMCPPreset(p mcpPreset) {
 		}
 		if p.ID == "playwright" && isStockBrowserRow(r) {
 			r.Enabled = true
-			if cmd, args, ok := s.toolInstaller.windowsNodeLaunch(p); ok {
+			var rowArgs []string
+			_ = json.Unmarshal(r.Args, &rowArgs)
+			if cmd, args, ok := s.toolInstaller.windowsNodeLaunch(mcpPreset{ID: p.ID, Args: rowArgs}); ok {
 				r.Command = cmd
-				r.Args, _ = json.Marshal(args)
+				r.Args, _ = json.Marshal(args) // keeps the proxy flags ARTEX manages
 			}
 			if _, err := pg.SaveMCP(r); err != nil {
 				log.Printf("[mcp] enable %s: %v", r.Name, err)
@@ -769,16 +771,20 @@ func (s *Server) autoAddMCPPreset(p mcpPreset) {
 
 // isStockBrowserRow reports whether the browser row is still exactly what the
 // database seeded (db/db.go): disabled, stdio, playwright-mcp with the seeded
-// arguments and no environment. An operator's own configuration is left alone.
+// arguments and no environment. The proxy flags and CA variable ARTEX itself
+// keeps in sync with traffic capture (Manager.syncBrowserMCPProxy) do not
+// count as changes. An operator's own configuration is left alone.
 func isStockBrowserRow(r *db.MCPServer) bool {
 	if r.Enabled || r.Transport != "stdio" || r.Command != browserMCPCommandName || r.URL != "" {
 		return false
 	}
 	var args []string
-	if json.Unmarshal(r.Args, &args) != nil || strings.Join(args, "\x00") != strings.Join([]string{"--headless", "--browser", "chromium"}, "\x00") {
+	if json.Unmarshal(r.Args, &args) != nil || strings.Join(stripProxyArgs(args), "\x00") != strings.Join([]string{"--headless", "--browser", "chromium"}, "\x00") {
 		return false
 	}
-	return len(jsonStrMap(r.Env)) == 0
+	env := jsonStrMap(r.Env)
+	delete(env, "NODE_EXTRA_CA_CERTS")
+	return len(env) == 0
 }
 
 // windowsNodeLaunch returns how to start an npm-installed server on Windows

@@ -335,6 +335,12 @@ func TestIsStockBrowserRow(t *testing.T) {
 	if !isStockBrowserRow(stock()) {
 		t.Fatal("the seeded row is not recognised")
 	}
+	proxied := stock()
+	proxied.Args = []byte(`["--headless","--browser","chromium","--proxy-server","http://127.0.0.1:8788"]`)
+	proxied.Env = []byte(`{"NODE_EXTRA_CA_CERTS":"/data/traffic/_ca/mitmproxy-ca-cert.pem"}`)
+	if !isStockBrowserRow(proxied) {
+		t.Fatal("the capture proxy ARTEX attaches made the seeded row look customised")
+	}
 	for name, change := range map[string]func(*db.MCPServer){
 		"enabled":   func(r *db.MCPServer) { r.Enabled = true },
 		"args":      func(r *db.MCPServer) { r.Args = []byte(`["--headless","--browser","firefox"]`) },
