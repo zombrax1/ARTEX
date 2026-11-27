@@ -2885,6 +2885,9 @@
   "Install: {command}": "Kurulum: {command}",
   "Project page": "Proje sayfası",
   "Built-in servers": "Yerleşik sunucular",
-  "Free MCP servers ARTEX knows how to run. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.": "ARTEX'in çalıştırmayı bildiği ücretsiz MCP sunucuları. Birini seçin, gerekenleri doldurun ve ekleyin. Etkin sunucular ARTEX başlarken denetlenir ve onları görebilen her ajan çalıştırmasıyla başlar.",
-  "Your servers": "Sunucularınız"
+  "Your servers": "Sunucularınız",
+  "Open-source MCP servers ARTEX knows how to run. Most are free with no account; some use a free or paid API key. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.": "ARTEX'in çalıştırmayı bildiği açık kaynak MCP sunucuları. Çoğu hesap gerektirmeden ücretsizdir; bazıları ücretsiz veya ücretli bir API anahtarı kullanır. Birini seçin, gerekenleri doldurun ve ekleyin. Etkin sunucular ARTEX başlarken denetlenir ve onları görebilen her ajan çalıştırmasıyla başlar.",
+  "Free": "Ücretsiz",
+  "Free API key": "Ücretsiz API anahtarı",
+  "Paid": "Ücretli"
 }

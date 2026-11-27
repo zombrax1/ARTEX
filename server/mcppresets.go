@@ -37,6 +37,11 @@ type mcpPreset struct {
 	// Setup is a short note on what has to run first (Burp, a backend server).
 	Setup   string `json:"setup,omitempty"`
 	Install string `json:"install,omitempty"`
+	// Cost: "free" (no account, no key), "free_key" (a free account's API key
+	// is enough) or "paid" (needs a paid product or plan for real use).
+	Cost string `json:"cost"`
+	// CostNote says what a free key or plan covers, when Cost is not "free".
+	CostNote string `json:"cost_note,omitempty"`
 }
 
 // mcpPresetStatus is a preset plus what this machine has for it.
@@ -62,6 +67,7 @@ func mcpPresets(goos string) []mcpPreset {
 	return []mcpPreset{
 		{
 			ID:          "playwright",
+			Cost:        "free",
 			Name:        "browser",
 			Title:       "Playwright (browser)",
 			Description: "Drives a real Chromium browser: open pages, click, fill forms, read the page and take screenshots.",
@@ -76,6 +82,7 @@ func mcpPresets(goos string) []mcpPreset {
 		},
 		{
 			ID:          "semgrep",
+			Cost:        "free",
 			Name:        "semgrep",
 			Title:       "Semgrep",
 			Description: "Static analysis: scans source code for vulnerabilities and insecure patterns with Semgrep's open rules. No account needed for local scans.",
@@ -89,7 +96,55 @@ func mcpPresets(goos string) []mcpPreset {
 			Install:     mcpInstallHint("semgrep", goos),
 		},
 		{
+			ID:          "osv-scanner",
+			Cost:        "free",
+			Name:        "osv-scanner",
+			Title:       "OSV-Scanner",
+			Description: "Google's dependency scanner: finds known vulnerabilities in a project's lockfiles and manifests using the free OSV.dev database, and explains each one. No account or key.",
+			Category:    "Code",
+			License:     "Apache-2.0",
+			Homepage:    "https://github.com/google/osv-scanner",
+			Transport:   "stdio",
+			Command:     "osv-scanner",
+			Args:        []string{"experimental-mcp"},
+			Env:         map[string]string{},
+			Install:     mcpInstallHint("osv-scanner", goos),
+		},
+		{
+			ID:          "trivy",
+			Cost:        "free",
+			Name:        "trivy",
+			Title:       "Trivy",
+			Description: "Aqua Security's open-source scanner: vulnerabilities, misconfigurations and secrets in folders, container images and remote repositories. No account or key.",
+			Category:    "Code",
+			License:     "MIT",
+			Homepage:    "https://github.com/aquasecurity/trivy-mcp",
+			Transport:   "stdio",
+			Command:     "trivy",
+			Args:        []string{"mcp"},
+			Env:         map[string]string{},
+			Setup:       trivyPluginSetup(goos),
+			Install:     mcpInstallHint("trivy", goos),
+		},
+		{
+			ID:          "nmap",
+			Cost:        "free",
+			Name:        "nmap",
+			Title:       "Nmap",
+			Description: "Port and service scanning through python-nmap: host discovery, port scans, version detection and XML parsing. Needs nmap itself installed. Scan only networks you are allowed to test.",
+			Category:    "Recon",
+			License:     "MIT",
+			Homepage:    "https://github.com/daedalus/mcp-server-nmap",
+			Transport:   "stdio",
+			Command:     "mcp-server-nmap",
+			Args:        []string{},
+			Env:         map[string]string{},
+			Install:     mcpInstallHint("mcp-server-nmap", goos),
+		},
+		{
 			ID:          "virustotal",
+			Cost:        "free_key",
+			CostNote:    "The free public API key allows 4 lookups a minute and 500 a day.",
 			Name:        "virustotal",
 			Title:       "VirusTotal",
 			Description: "Looks up file hashes, URLs, domains and IPs in VirusTotal. Needs a free VirusTotal API key.",
@@ -105,6 +160,8 @@ func mcpPresets(goos string) []mcpPreset {
 		},
 		{
 			ID:          "shodan",
+			Cost:        "free_key",
+			CostNote:    "A free account key covers host lookups; search filters and higher limits need a paid membership.",
 			Name:        "shodan",
 			Title:       "Shodan",
 			Description: "Queries Shodan for exposed hosts, open ports, banners, DNS and CVEs. Needs a Shodan API key.",
@@ -120,6 +177,7 @@ func mcpPresets(goos string) []mcpPreset {
 		},
 		{
 			ID:           "hexstrike",
+			Cost:         "free",
 			Name:         "hexstrike",
 			Title:        "HexStrike AI",
 			Description:  "Wraps many scanners (nmap, nuclei, ffuf, sqlmap and more) as MCP tools. Each wrapped tool must be installed on this machine; most target Linux.",
@@ -136,6 +194,8 @@ func mcpPresets(goos string) []mcpPreset {
 		},
 		{
 			ID:          "burp",
+			Cost:        "free",
+			CostNote:    "Works with the free Community Edition; scanner tools need Burp Suite Professional.",
 			Name:        "burp",
 			Title:       "Burp Suite",
 			Description: "Connects to a running Burp Suite through PortSwigger's MCP Server extension (proxy history, Repeater, scanner where available).",
@@ -149,6 +209,20 @@ func mcpPresets(goos string) []mcpPreset {
 			Setup:       "Install the MCP Server extension in Burp Suite (BApp Store or a build of the repository) and keep Burp running with it enabled. The default address is http://127.0.0.1:9876.",
 		},
 	}
+}
+
+// trivyPluginSetup explains where the Trivy MCP plugin must be installed. Trivy
+// looks for plugins in $XDG_DATA_HOME/.trivy/plugins, or ~/.trivy/plugins of the
+// user running it. With agent isolation on, ARTEX starts stdio servers as its
+// executor identity (its own home on Linux/macOS, a separate account on
+// Windows), so the plugin goes in a shared folder that identity can read, named
+// by XDG_DATA_HOME both when installing and in the server's environment.
+func trivyPluginSetup(goos string) string {
+	const base = "The MCP server is a Trivy plugin. Without agent isolation, run `trivy plugin install mcp` once as the user that runs ARTEX. With agent isolation on, agent tools run as a separate identity that cannot see your home folder, so install the plugin into a shared folder instead: "
+	if goos == "windows" {
+		return base + "in Command Prompt run `set XDG_DATA_HOME=C:\\ProgramData\\trivy` and then `trivy plugin install mcp`, and add XDG_DATA_HOME=C:\\ProgramData\\trivy to this server's environment variables."
+	}
+	return base + "run `sudo env XDG_DATA_HOME=/opt/trivy trivy plugin install mcp`, and add XDG_DATA_HOME=/opt/trivy to this server's environment variables. The folder must be readable by the agent identity."
 }
 
 // browserMCPCommandName is the seeded browser row's binary (db/browser_mcp.go).
@@ -173,6 +247,28 @@ func mcpInstallHint(command, goos string) string {
 			return "python -m pip install semgrep (or: pipx install semgrep)"
 		}
 		return "python3 -m pip install semgrep (or: pipx install semgrep)"
+	case "osv-scanner":
+		switch goos {
+		case "darwin":
+			return "brew install osv-scanner (or: go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest)"
+		case "windows":
+			return "download osv-scanner_windows_amd64.exe from https://github.com/google/osv-scanner/releases, rename it to osv-scanner.exe and put it on PATH (or: go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest)"
+		}
+		return "go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest (or a release binary from https://github.com/google/osv-scanner/releases)"
+	case "trivy":
+		switch goos {
+		case "darwin":
+			return "brew install trivy, then: trivy plugin install mcp"
+		case "windows":
+			return "download Trivy from https://github.com/aquasecurity/trivy/releases and put trivy.exe on PATH, then: trivy plugin install mcp"
+		}
+		return "install Trivy (https://trivy.dev/latest/getting-started/installation/), then: trivy plugin install mcp"
+	case "mcp-server-nmap":
+		nmap := "install nmap from https://nmap.org/download"
+		if goos == "darwin" {
+			nmap = "brew install nmap"
+		}
+		return "pipx install mcp-server-nmap (or: " + pythonCommand(goos) + " -m pip install mcp-server-nmap), and " + nmap
 	case "npx", "npm", "node":
 		return "install Node.js 20 or newer from https://nodejs.org, then restart ARTEX so it sees the new PATH"
 	case "uvx", "uv":
