@@ -214,6 +214,13 @@ func TestUsePlaywrightBrowsersOnlyWhenDownloaded(t *testing.T) {
 		t.Fatal(err)
 	}
 	usePlaywrightBrowsers(tools)
+	if v := os.Getenv("PLAYWRIGHT_BROWSERS_PATH"); v != "" {
+		t.Fatalf("set to %q for a download that did not finish", v)
+	}
+	if err := os.WriteFile(filepath.Join(tools, "ms-playwright", playwrightDoneMarker), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	usePlaywrightBrowsers(tools)
 	if v := os.Getenv("PLAYWRIGHT_BROWSERS_PATH"); v != filepath.Join(tools, "ms-playwright") {
 		t.Fatalf("PLAYWRIGHT_BROWSERS_PATH = %q", v)
 	}
@@ -287,5 +294,58 @@ func TestAutoAddMCPPreset(t *testing.T) {
 	s.autoAddMCPPreset(p)
 	if find() != nil {
 		t.Fatal("a removed server was added again")
+	}
+}
+
+func TestPlaywrightCompleteRetriesACutDownload(t *testing.T) {
+	t.Setenv("PLAYWRIGHT_BROWSERS_PATH", "")
+	in := newMCPInstaller(t.TempDir())
+	if !in.playwrightComplete() {
+		t.Fatal("a playwright-mcp that is not ARTEX's copy must count as complete")
+	}
+	shim := filepath.Join(in.dir, "node", "node_modules", ".bin", browserMCPCommandName)
+	if runtime.GOOS == "windows" {
+		shim += ".cmd"
+	}
+	if err := os.MkdirAll(filepath.Dir(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shim, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if in.playwrightComplete() {
+		t.Fatal("ARTEX's Playwright without a finished browser download counted as complete")
+	}
+	if err := os.MkdirAll(filepath.Join(in.dir, "ms-playwright"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(in.dir, "ms-playwright", playwrightDoneMarker), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !in.playwrightComplete() {
+		t.Fatal("a finished download counted as incomplete")
+	}
+}
+
+func TestIsStockBrowserRow(t *testing.T) {
+	stock := func() *db.MCPServer {
+		return &db.MCPServer{Name: "browser", Transport: "stdio", Command: browserMCPCommandName,
+			Args: []byte(`["--headless","--browser","chromium"]`), Env: []byte(`{}`)}
+	}
+	if !isStockBrowserRow(stock()) {
+		t.Fatal("the seeded row is not recognised")
+	}
+	for name, change := range map[string]func(*db.MCPServer){
+		"enabled":   func(r *db.MCPServer) { r.Enabled = true },
+		"args":      func(r *db.MCPServer) { r.Args = []byte(`["--headless","--browser","firefox"]`) },
+		"env":       func(r *db.MCPServer) { r.Env = []byte(`{"DEBUG":"1"}`) },
+		"command":   func(r *db.MCPServer) { r.Command = "npx" },
+		"transport": func(r *db.MCPServer) { r.Transport = "http"; r.URL = "http://127.0.0.1:1/mcp" },
+	} {
+		r := stock()
+		change(r)
+		if isStockBrowserRow(r) {
+			t.Fatalf("a row with changed %s counted as stock", name)
+		}
 	}
 }

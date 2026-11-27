@@ -125,7 +125,7 @@ func usePlaywrightBrowsers(tools string) {
 		return
 	}
 	dir := filepath.Join(tools, "ms-playwright")
-	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+	if _, err := os.Stat(filepath.Join(dir, playwrightDoneMarker)); err == nil {
 		_ = os.Setenv("PLAYWRIGHT_BROWSERS_PATH", dir)
 	}
 }
@@ -536,16 +536,40 @@ func (in *mcpInstaller) linkVenvCommand(command string) error {
 	return os.Symlink(filepath.Join("..", "py", venvBinDir(runtime.GOOS), name), dst)
 }
 
-func (in *mcpInstaller) installNpm(ctx context.Context, p mcpNpmPackage) error {
+// npmCommand returns how to run npm. On Windows npm is a .cmd wrapper, which
+// os/exec cannot start without a command interpreter (and quoting through
+// cmd.exe is fragile), so npm's own JavaScript entry point is run with node
+// instead, the way the wrapper does.
+func npmCommand() ([]string, error) {
+	if runtime.GOOS == "windows" {
+		node, err := exec.LookPath("node")
+		if err != nil {
+			return nil, errMCPNoNode
+		}
+		cli := filepath.Join(filepath.Dir(node), "node_modules", "npm", "bin", "npm-cli.js")
+		if _, err := os.Stat(cli); err != nil {
+			return nil, fmt.Errorf("npm was not found next to %s: %w", node, errMCPNoNode)
+		}
+		return []string{node, cli}, nil
+	}
 	npm, err := exec.LookPath("npm")
 	if err != nil {
-		return errMCPNoNode
+		return nil, errMCPNoNode
+	}
+	return []string{npm}, nil
+}
+
+func (in *mcpInstaller) installNpm(ctx context.Context, p mcpNpmPackage) error {
+	npm, err := npmCommand()
+	if err != nil {
+		return err
 	}
 	prefix := filepath.Join(in.dir, "node")
 	if err := mkdirShared(prefix); err != nil {
 		return err
 	}
-	if err := in.installCommand(ctx, nil, npm, "install", "--prefix", prefix, "--no-audit", "--no-fund", p.Spec); err != nil {
+	args := append(npm[1:], "install", "--prefix", prefix, "--no-audit", "--no-fund", p.Spec)
+	if err := in.installCommand(ctx, nil, npm[0], args...); err != nil {
 		return err
 	}
 	if p.PresetID == "playwright" {
@@ -567,11 +591,42 @@ func (in *mcpInstaller) installPlaywrightBrowser(ctx context.Context, prefix str
 	}
 	browsers := filepath.Join(in.dir, "ms-playwright")
 	cli := filepath.Join(prefix, "node_modules", "playwright-core", "cli.js")
+	_ = os.Remove(filepath.Join(browsers, playwrightDoneMarker))
 	if err := in.installCommand(ctx, []string{"PLAYWRIGHT_BROWSERS_PATH=" + browsers}, node, cli, "install", "chromium"); err != nil {
 		return fmt.Errorf("download Chromium for Playwright: %w", err)
 	}
+	if err := os.WriteFile(filepath.Join(browsers, playwrightDoneMarker), []byte("chromium\n"), 0o644); err != nil {
+		return err
+	}
 	usePlaywrightBrowsers(in.dir)
 	return nil
+}
+
+// playwrightDoneMarker is written into <tools>/ms-playwright once the browser
+// download finished, so a download cut short is retried at the next start and
+// never used.
+const playwrightDoneMarker = ".artex-complete"
+
+// playwrightComplete reports whether the Playwright ARTEX manages still needs
+// its browser: true when playwright-mcp is not ARTEX's copy, when Playwright
+// is pointed at browsers elsewhere, or when the download finished.
+func (in *mcpInstaller) playwrightComplete() bool {
+	own := filepath.Join(in.dir, "node", "node_modules", ".bin", browserMCPCommandName)
+	if runtime.GOOS == "windows" {
+		own += ".cmd"
+	}
+	if _, err := os.Stat(own); err != nil {
+		return true
+	}
+	if os.Getenv("PLAYWRIGHT_BROWSERS_PATH") != "" && !in.usesOwnBrowsers() {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(in.dir, "ms-playwright", playwrightDoneMarker))
+	return err == nil
+}
+
+func (in *mcpInstaller) usesOwnBrowsers() bool {
+	return pathKey(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")) == pathKey(filepath.Join(in.dir, "ms-playwright"))
 }
 
 // mcpAutoAddAgents are the built-in agents an automatically added security
@@ -594,12 +649,14 @@ func (s *Server) autoInstallMCPTools() {
 	for _, p := range mcpPresets(runtime.GOOS) {
 		presets[p.ID] = p
 	}
-	run := func(id, command string, install func() error) {
+	// complete, when set, says whether a command that is on PATH still needs
+	// part of its install finished (Playwright's browser download).
+	run := func(id, command string, install func() error, complete func() bool) {
 		p, ok := presets[id]
 		if !ok || !p.Auto || ctx.Err() != nil {
 			return
 		}
-		if lookupMCPCommand(command, nil) {
+		if lookupMCPCommand(command, nil) && (complete == nil || complete()) {
 			in.set(id, "installed", "")
 		} else {
 			in.set(id, "installing", "")
@@ -626,13 +683,17 @@ func (s *Server) autoInstallMCPTools() {
 		s.autoAddMCPPreset(p)
 	}
 	for _, b := range mcpReleaseBinaries {
-		run(b.PresetID, b.Command, func() error { return in.installReleaseBinary(ctx, b) })
+		run(b.PresetID, b.Command, func() error { return in.installReleaseBinary(ctx, b) }, nil)
 	}
 	for _, p := range mcpPipPackages {
-		run(p.PresetID, p.Command, func() error { return in.installPip(ctx, p) })
+		run(p.PresetID, p.Command, func() error { return in.installPip(ctx, p) }, nil)
 	}
 	for _, p := range mcpNpmPackages {
-		run(p.PresetID, p.Command, func() error { return in.installNpm(ctx, p) })
+		complete := func() bool { return true }
+		if p.PresetID == "playwright" {
+			complete = in.playwrightComplete
+		}
+		run(p.PresetID, p.Command, func() error { return in.installNpm(ctx, p) }, complete)
 	}
 }
 
@@ -670,7 +731,7 @@ func (s *Server) autoAddMCPPreset(p mcpPreset) {
 		if r.Name != p.Name {
 			continue
 		}
-		if p.ID == "playwright" && !r.Enabled && r.Command == browserMCPCommandName {
+		if p.ID == "playwright" && isStockBrowserRow(r) {
 			r.Enabled = true
 			if _, err := pg.SaveMCP(r); err != nil {
 				log.Printf("[mcp] enable %s: %v", r.Name, err)
@@ -694,4 +755,18 @@ func (s *Server) autoAddMCPPreset(p mcpPreset) {
 	}
 	_ = pg.SetSetting(key, "done")
 	log.Printf("[mcp] added %s (installed by ARTEX or found on PATH); agents %s can use it", p.Name, strings.Join(mcpAutoAddAgents, ", "))
+}
+
+// isStockBrowserRow reports whether the browser row is still exactly what the
+// database seeded (db/db.go): disabled, stdio, playwright-mcp with the seeded
+// arguments and no environment. An operator's own configuration is left alone.
+func isStockBrowserRow(r *db.MCPServer) bool {
+	if r.Enabled || r.Transport != "stdio" || r.Command != browserMCPCommandName || r.URL != "" {
+		return false
+	}
+	var args []string
+	if json.Unmarshal(r.Args, &args) != nil || strings.Join(args, "\x00") != strings.Join([]string{"--headless", "--browser", "chromium"}, "\x00") {
+		return false
+	}
+	return len(jsonStrMap(r.Env)) == 0
 }
