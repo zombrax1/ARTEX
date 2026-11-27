@@ -2444,6 +2444,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
 
   // ── mcp ──
   if (path === "/mcp" && m === "GET") return { servers: D.mcpServers };
+  if (path === "/mcp/presets" && m === "GET") return { presets: D.mcpPresets };
   if (path === "/mcp" && m === "POST") return { id: 3 };
   if (seg[0] === "mcp" && seg[2] === "tools") return { tools: D.mcpToolsById[Number(seg[1])] ?? [] };
   if (seg[0] === "mcp" && seg[2] === "refresh") return { tools: D.mcpToolsById[Number(seg[1])] ?? [] };

@@ -1095,6 +1095,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/mcp-server/tokens/{id}", s.deleteMCPServerToken)
 	mux.HandleFunc("GET /api/mcp-server/audit", s.listMCPServerAudit)
 	mux.HandleFunc("GET /api/mcp", s.pgListMCP)
+	mux.HandleFunc("GET /api/mcp/presets", s.pgListMCPPresets)
 	mux.HandleFunc("POST /api/mcp", s.pgSaveMCP)
 	mux.HandleFunc("DELETE /api/mcp/{id}", s.pgDeleteMCP)
 	mux.HandleFunc("GET /api/mcp/{id}/tools", s.pgMCPTools)

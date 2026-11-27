@@ -2873,5 +2873,18 @@
   "Repeated-failure detection saved": "Tekrarlanan hata algılama kaydedildi",
   "Repeated-failure detection": "Tekrarlanan hata algılama",
   "Stops worker and chat agents from repeating failing commands or identical requests. A refused call is not run; the agent gets a summary of the earlier failure and must change approach. Set a limit to 0 to turn that check off. Applies to runs started afterwards.": "Worker ve sohbet ajanlarının başarısız komutları veya aynı istekleri tekrarlamasını engeller. Reddedilen çağrı çalıştırılmaz; ajan önceki hatanın özetini alır ve yaklaşımını değiştirmelidir. Bir kontrolü kapatmak için sınırı 0 yapın. Daha sonra başlatılan çalışmalara uygulanır.",
-  "Failed to load settings: {error}": "Ayarlar yüklenemedi: {error}"
+  "Failed to load settings: {error}": "Ayarlar yüklenemedi: {error}",
+  "Fill in {key} before adding this server": "Bu sunucuyu eklemeden önce {key} alanını doldurun",
+  "Replace {placeholder} in the arguments before adding this server": "Bu sunucuyu eklemeden önce argümanlardaki {placeholder} değerini değiştirin",
+  "Added": "Eklendi",
+  "Not installed": "Kurulu değil",
+  "Needs an API key": "API anahtarı gerekiyor",
+  "Needs setup": "Kurulum gerekiyor",
+  "Ready to add": "Eklemeye hazır",
+  "Before you start: {note}": "Başlamadan önce: {note}",
+  "Install: {command}": "Kurulum: {command}",
+  "Project page": "Proje sayfası",
+  "Built-in servers": "Yerleşik sunucular",
+  "Free MCP servers ARTEX knows how to run. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.": "ARTEX'in çalıştırmayı bildiği ücretsiz MCP sunucuları. Birini seçin, gerekenleri doldurun ve ekleyin. Etkin sunucular ARTEX başlarken denetlenir ve onları görebilen her ajan çalıştırmasıyla başlar.",
+  "Your servers": "Sunucularınız"
 }

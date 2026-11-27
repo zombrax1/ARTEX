@@ -2873,5 +2873,18 @@
   "Repeated-failure detection saved": "重复失败检测已保存",
   "Repeated-failure detection": "重复失败检测",
   "Stops worker and chat agents from repeating failing commands or identical requests. A refused call is not run; the agent gets a summary of the earlier failure and must change approach. Set a limit to 0 to turn that check off. Applies to runs started afterwards.": "阻止 Worker 和对话智能体重复执行失败的命令或相同的请求。被拒绝的调用不会执行；智能体会收到此前失败的摘要，并必须更换方法。将某项上限设为 0 可关闭该检查。对之后启动的运行生效。",
-  "Failed to load settings: {error}": "加载设置失败：{error}"
+  "Failed to load settings: {error}": "加载设置失败：{error}",
+  "Fill in {key} before adding this server": "添加此服务器前请先填写 {key}",
+  "Replace {placeholder} in the arguments before adding this server": "添加此服务器前请替换参数中的 {placeholder}",
+  "Added": "已添加",
+  "Not installed": "未安装",
+  "Needs an API key": "需要 API 密钥",
+  "Needs setup": "需要配置",
+  "Ready to add": "可以添加",
+  "Before you start: {note}": "开始之前：{note}",
+  "Install: {command}": "安装：{command}",
+  "Project page": "项目主页",
+  "Built-in servers": "内置服务器",
+  "Free MCP servers ARTEX knows how to run. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.": "ARTEX 内置的免费 MCP 服务器。选择一个，填写所需内容后添加。已启用的服务器会在 ARTEX 启动时检查，并随每个可见它的智能体运行一起启动。",
+  "Your servers": "我的服务器"
 }
