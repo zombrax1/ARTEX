@@ -106,54 +106,66 @@ func (c *mcpCooldowns) clear(id int64) {
 
 // connectMCPTools connects one server and lists its tools within timeout. The
 // work runs in its own goroutine, so even a transport that does not watch its
-// context (an SSE stream that never sends its endpoint) cannot hold the caller;
-// a client that connects after the deadline is closed when it does.
+// context (an SSE stream that never sends its endpoint) cannot hold the caller.
+// The worker hands its result over under a lock: once the caller has given up,
+// a client that connects late is closed by the worker, never left open.
 func connectMCPTools(ctx context.Context, m *db.MCPServer, priv ExecPrivilege, timeout time.Duration,
 	connect func(context.Context, *db.MCPServer, ExecPrivilege) (mcpClient, error)) mcpConnectResult {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var (
+		mu        sync.Mutex
+		abandoned bool
+	)
 	done := make(chan mcpConnectResult, 1)
-	var abandoned sync.Once
-	gone := make(chan struct{})
+	deliver := func(r mcpConnectResult) {
+		mu.Lock()
+		defer mu.Unlock()
+		if abandoned {
+			if r.client != nil {
+				_ = r.client.Close()
+			}
+			return
+		}
+		done <- r
+	}
 	go func() {
-		defer cancel()
 		cl, err := connect(cctx, m, priv)
 		if err != nil {
-			done <- mcpConnectResult{stage: "connect", err: err}
+			deliver(mcpConnectResult{stage: "connect", err: err})
 			return
 		}
 		ts, err := cl.Tools(cctx)
 		if err != nil {
 			_ = cl.Close()
-			done <- mcpConnectResult{stage: "tools/list", err: err}
+			deliver(mcpConnectResult{stage: "tools/list", err: err})
 			return
 		}
-		select {
-		case done <- mcpConnectResult{client: cl, tools: ts}:
-		case <-gone:
-			_ = cl.Close() // the caller stopped waiting
-		}
+		deliver(mcpConnectResult{client: cl, tools: ts})
 	}()
-	select {
-	case r := <-done:
+	normalize := func(r mcpConnectResult) mcpConnectResult {
 		if r.err != nil && errors.Is(r.err, context.DeadlineExceeded) && ctx.Err() == nil {
 			r.err = fmt.Errorf("%w (%s): %v", errMCPConnectTimeout, timeout, r.err)
 		}
 		return r
-	case <-cctx.Done():
-		abandoned.Do(func() { close(gone) })
-		// The worker may have finished at the same moment.
-		select {
-		case r := <-done:
-			if r.err == nil {
-				return r
-			}
-		default:
-		}
-		if ctx.Err() != nil {
-			return mcpConnectResult{stage: "connect", err: ctx.Err()}
-		}
-		return mcpConnectResult{stage: "connect", err: fmt.Errorf("%w (%s)", errMCPConnectTimeout, timeout)}
 	}
+	select {
+	case r := <-done:
+		return normalize(r)
+	case <-cctx.Done():
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	select {
+	case r := <-done: // the worker finished at the same moment: keep its result
+		return normalize(r)
+	default:
+	}
+	abandoned = true
+	if ctx.Err() != nil {
+		return mcpConnectResult{stage: "connect", err: ctx.Err()}
+	}
+	return mcpConnectResult{stage: "connect", err: fmt.Errorf("%w (%s)", errMCPConnectTimeout, timeout)}
 }
 
 // connectAgentMCPs connects the given servers for one agent run, in parallel

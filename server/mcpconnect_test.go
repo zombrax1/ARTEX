@@ -124,3 +124,44 @@ func TestConnectAgentMCPsRunStoppedIsNotAServerFailure(t *testing.T) {
 		t.Fatal("a stopped run put the server on cooldown")
 	}
 }
+
+// An immediate connect error is reported as itself, never as a timeout, and
+// puts the server on no cooldown.
+func TestConnectMCPToolsKeepsImmediateError(t *testing.T) {
+	boom := errors.New("boom")
+	fail := func(context.Context, *db.MCPServer, ExecPrivilege) (mcpClient, error) { return nil, boom }
+	for i := 0; i < 500; i++ {
+		r := connectMCPTools(context.Background(), &db.MCPServer{ID: 3}, ExecPrivilege{}, time.Second, fail)
+		if !errors.Is(r.err, boom) || errors.Is(r.err, errMCPConnectTimeout) {
+			t.Fatalf("run %d: err = %v", i, r.err)
+		}
+	}
+}
+
+// Every client that connects after the caller gave up is closed.
+func TestConnectMCPToolsClosesEveryLateClient(t *testing.T) {
+	const n = 50
+	clients := make([]*fakeMCPClient, n)
+	for i := range clients {
+		clients[i] = &fakeMCPClient{}
+		release := make(chan struct{})
+		cl := clients[i]
+		slow := func(context.Context, *db.MCPServer, ExecPrivilege) (mcpClient, error) {
+			<-release
+			return cl, nil
+		}
+		if r := connectMCPTools(context.Background(), &db.MCPServer{ID: 4}, ExecPrivilege{}, 5*time.Millisecond, slow); r.err == nil {
+			t.Fatal("want a timeout")
+		}
+		close(release)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for _, cl := range clients {
+		for !cl.closed.Load() {
+			if time.Now().After(deadline) {
+				t.Fatal("a late client was not closed")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+}
