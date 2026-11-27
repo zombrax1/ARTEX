@@ -1219,3 +1219,16 @@ ON CONFLICT (agent_id,resource_kind,resource_id,mcp_tool_name) DO UPDATE SET ena
 	_, err := d.Exec(`DELETE FROM agent_visibility WHERE agent_id=$1 AND resource_kind=$2 AND resource_id=$3`, agentID, kind, resourceID)
 	return err
 }
+
+// GrantMCPToAgentKeys makes an MCP server visible to the agents with the given
+// keys. Keys with no agent are skipped; an existing row is turned on.
+func (d *DB) GrantMCPToAgentKeys(mcpID int64, keys []string) error {
+	for _, key := range keys {
+		if _, err := d.Exec(`INSERT INTO agent_visibility(agent_id,resource_kind,resource_id,enabled)
+SELECT id,'mcp',$2,true FROM agents WHERE key=$1
+ON CONFLICT (agent_id,resource_kind,resource_id,mcp_tool_name) DO UPDATE SET enabled=true`, key, mcpID); err != nil {
+			return fmt.Errorf("agent %s: %w", key, err)
+		}
+	}
+	return nil
+}

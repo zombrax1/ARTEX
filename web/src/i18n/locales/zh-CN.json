@@ -2889,5 +2889,12 @@
   "Open-source MCP servers ARTEX knows how to run. Most are free with no account; some use a free or paid API key. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.": "ARTEX 内置的开源 MCP 服务器。大多数免费且无需账号；部分需要免费或付费的 API 密钥。选择一个，填写所需内容后添加。已启用的服务器会在 ARTEX 启动时检查，并随每个可见它的智能体运行一起启动。",
   "Free": "免费",
   "Free API key": "免费 API 密钥",
-  "Paid": "付费"
+  "Paid": "付费",
+  "Installing…": "安装中…",
+  "Install failed": "安装失败",
+  "Needs {program}": "需要 {program}",
+  "ARTEX is installing this server…": "ARTEX 正在安装此服务器…",
+  "ARTEX could not install it: {reason}": "ARTEX 无法安装：{reason}",
+  "Installed. ARTEX adds it once {program} is installed on this computer.": "已安装。此电脑安装 {program} 后，ARTEX 会自动添加它。",
+  "The free servers that need no key are installed and added by ARTEX itself when it starts. Set ARTEX_MCP_AUTOINSTALL=off to turn this off.": "无需密钥的免费服务器会在 ARTEX 启动时由其自动安装并添加。设置 ARTEX_MCP_AUTOINSTALL=off 可关闭此功能。"
 }

@@ -1507,6 +1507,10 @@ export interface MCPPreset {
   cost_note?: string;
   installed?: boolean; // stdio only: the command is on PATH
   added_id?: number; // id of an existing row with this name
+  auto?: boolean; // ARTEX installs and adds this server by itself when it starts
+  requires?: string[]; // other programs it runs, which ARTEX cannot install
+  missing?: string[]; // the required programs that are not on PATH
+  auto_install?: { state: "installing" | "installed" | "failed" | "unavailable"; message?: string };
 }
 
 export interface MCPTool {

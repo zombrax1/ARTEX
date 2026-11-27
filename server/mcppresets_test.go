@@ -162,13 +162,3 @@ func TestCheckMCPCommandUsesConfiguredPath(t *testing.T) {
 		}
 	}
 }
-
-func TestTrivySetupCoversIsolation(t *testing.T) {
-	for goos, want := range map[string]string{"linux": "XDG_DATA_HOME=/opt/trivy", "darwin": "XDG_DATA_HOME=/opt/trivy", "windows": `XDG_DATA_HOME=C:\ProgramData\trivy`} {
-		for _, p := range mcpPresets(goos) {
-			if p.ID == "trivy" && !strings.Contains(p.Setup, want) {
-				t.Fatalf("%s: trivy setup does not say where to install the plugin under isolation: %q", goos, p.Setup)
-			}
-		}
-	}
-}

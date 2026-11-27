@@ -353,6 +353,13 @@ func PrepareExecPrivilege(p *ExecPrivilege, dataDir, keyDir, configPath string) 
 	}
 	// Agents run skill scripts: the skill tree stays readable.
 	tryACEs(p.SkillDir, sid, readOnlyDirACEs)
+	// Agents start the MCP servers ARTEX installs (server/mcptools.go): the tools
+	// folder is readable and runnable, not writable.
+	toolsDir := MCPToolsDir(dataDir)
+	if err := os.MkdirAll(toolsDir, 0o755); err != nil {
+		return err
+	}
+	tryACEs(toolsDir, sid, readOnlyDirACEs)
 	for _, f := range []string{filepath.Join(keyDir, "jwt.key"), filepath.Join(keyDir, "secret.key"), configPath, p.cred} {
 		tryACEs(f, sid, denyAllACEs)
 	}

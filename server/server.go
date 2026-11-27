@@ -60,6 +60,8 @@ type Server struct {
 	execPriv  ExecPrivilege   // identity agent processes run under; zero keeps the server's own
 	isolation IsolationStatus // result of the startup isolation self-test (isolation.go); zero when not run
 
+	toolInstaller *mcpInstaller // installs the free MCP servers at startup (WithMCPAutoInstall); nil in tests or when turned off
+
 	setupMu sync.Mutex
 
 	// sysMetrics samples CPU, memory, disk and GPU use for the dashboard.
@@ -333,9 +335,13 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	if s.scrubSecrets {
 		ScrubSecretEnv()
 	}
-	// Fill the tool cache for any enabled MCP that has none yet (notably the
-	// seeded browser MCP on first run). Async so it never blocks startup.
-	go s.discoverEmptyMCPsOnStartup()
+	// Install and add the free MCP servers ARTEX ships (mcptools.go), then fill
+	// the tool cache for any enabled MCP that has none yet (notably the seeded
+	// browser MCP and the servers just added). Async so it never blocks startup.
+	go func() {
+		s.autoInstallMCPTools()
+		s.discoverEmptyMCPsOnStartup()
+	}()
 	s.restoreTaskRuntimes()
 	go s.reconcileConcurrency()
 	s.startTaskArchiveWorker()

@@ -2889,5 +2889,12 @@
   "Open-source MCP servers ARTEX knows how to run. Most are free with no account; some use a free or paid API key. Pick one, fill in anything it needs, then add it. Enabled servers are checked when ARTEX starts and start with each agent run that can see them.": "ARTEX'in çalıştırmayı bildiği açık kaynak MCP sunucuları. Çoğu hesap gerektirmeden ücretsizdir; bazıları ücretsiz veya ücretli bir API anahtarı kullanır. Birini seçin, gerekenleri doldurun ve ekleyin. Etkin sunucular ARTEX başlarken denetlenir ve onları görebilen her ajan çalıştırmasıyla başlar.",
   "Free": "Ücretsiz",
   "Free API key": "Ücretsiz API anahtarı",
-  "Paid": "Ücretli"
+  "Paid": "Ücretli",
+  "Installing…": "Kuruluyor…",
+  "Install failed": "Kurulum başarısız",
+  "Needs {program}": "{program} gerekli",
+  "ARTEX is installing this server…": "ARTEX bu sunucuyu kuruyor…",
+  "ARTEX could not install it: {reason}": "ARTEX bunu kuramadı: {reason}",
+  "Installed. ARTEX adds it once {program} is installed on this computer.": "Kuruldu. {program} bu bilgisayara kurulunca ARTEX onu ekler.",
+  "The free servers that need no key are installed and added by ARTEX itself when it starts. Set ARTEX_MCP_AUTOINSTALL=off to turn this off.": "Anahtar gerektirmeyen ücretsiz sunucuları ARTEX başlarken kendisi kurar ve ekler. Kapatmak için ARTEX_MCP_AUTOINSTALL=off ayarlayın."
 }
