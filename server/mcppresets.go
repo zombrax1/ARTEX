@@ -123,7 +123,7 @@ func mcpPresets(goos string) []mcpPreset {
 			Command:     "trivy",
 			Args:        []string{"mcp"},
 			Env:         map[string]string{},
-			Setup:       "The MCP server is a Trivy plugin: after installing Trivy, run `trivy plugin install mcp` once.",
+			Setup:       trivyPluginSetup(goos),
 			Install:     mcpInstallHint("trivy", goos),
 		},
 		{
@@ -209,6 +209,18 @@ func mcpPresets(goos string) []mcpPreset {
 			Setup:       "Install the MCP Server extension in Burp Suite (BApp Store or a build of the repository) and keep Burp running with it enabled. The default address is http://127.0.0.1:9876.",
 		},
 	}
+}
+
+// trivyPluginSetup explains where the Trivy MCP plugin must be installed. Trivy
+// looks for plugins in ~/.trivy/plugins of the user that runs it, and with agent
+// isolation on, ARTEX starts stdio servers as its executor identity with that
+// identity's home, so the plugin has to be installed there too.
+func trivyPluginSetup(goos string) string {
+	const base = "The MCP server is a Trivy plugin, which Trivy looks for in ~/.trivy/plugins of the user running it. Install it for the identity that runs ARTEX's agent tools. Without agent isolation, run `trivy plugin install mcp` as the user that runs ARTEX. "
+	if goos == "windows" {
+		return base + "With agent isolation on, run it as the agent account: runas /user:artex-agent \"trivy plugin install mcp\" (use your account name if you chose another one)."
+	}
+	return base + "With agent isolation on (ARTEX started as root), run it with the executor's home: sudo env HOME=<ARTEX data dir>/exec-home trivy plugin install mcp"
 }
 
 // browserMCPCommandName is the seeded browser row's binary (db/browser_mcp.go).
