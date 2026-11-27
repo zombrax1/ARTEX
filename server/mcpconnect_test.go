@@ -1,0 +1,174 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/Autumn-27/artex/db"
+	actool "github.com/Autumn-27/norma/tool"
+)
+
+type fakeMCPClient struct{ closed atomic.Bool }
+
+func (f *fakeMCPClient) Tools(context.Context) ([]actool.CoreTool, error) { return nil, nil }
+func (f *fakeMCPClient) Close() error                                     { f.closed.Store(true); return nil }
+
+// A server whose connect never returns, and ignores its context, must not hold
+// the caller past the timeout.
+func TestConnectMCPToolsTimesOutOnServerThatNeverAnswers(t *testing.T) {
+	block := make(chan struct{})
+	defer close(block)
+	hang := func(context.Context, *db.MCPServer, ExecPrivilege) (mcpClient, error) {
+		<-block
+		return nil, errors.New("unreachable")
+	}
+	start := time.Now()
+	r := connectMCPTools(context.Background(), &db.MCPServer{ID: 1, Name: "hang"}, ExecPrivilege{}, 100*time.Millisecond, hang)
+	if !errors.Is(r.err, errMCPConnectTimeout) {
+		t.Fatalf("err = %v, want a timeout", r.err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("took %s", d)
+	}
+}
+
+// A client that connects after the caller gave up is closed, not leaked.
+func TestConnectMCPToolsClosesLateClient(t *testing.T) {
+	late := &fakeMCPClient{}
+	release := make(chan struct{})
+	slow := func(context.Context, *db.MCPServer, ExecPrivilege) (mcpClient, error) {
+		<-release
+		return late, nil
+	}
+	r := connectMCPTools(context.Background(), &db.MCPServer{ID: 2}, ExecPrivilege{}, 50*time.Millisecond, slow)
+	if r.err == nil {
+		t.Fatal("want a timeout")
+	}
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for !late.closed.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("late client was not closed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Servers connect in parallel, a hanging one does not stop the others, and a
+// server that timed out is skipped by the next run until its settings change.
+func TestConnectAgentMCPsParallelAndCooldown(t *testing.T) {
+	t.Setenv(envMCPConnectTimeout, "1")
+	agentMCPCooldowns = &mcpCooldowns{until: map[int64]mcpCooldown{}}
+	block := make(chan struct{})
+	defer close(block)
+	var calls atomic.Int32
+	connect := func(ctx context.Context, m *db.MCPServer, _ ExecPrivilege) (mcpClient, error) {
+		calls.Add(1)
+		if m.Name == "ok" {
+			return &fakeMCPClient{}, nil
+		}
+		<-block
+		return nil, errors.New("unreachable")
+	}
+	servers := []*db.MCPServer{
+		{ID: 10, Name: "hang1", Transport: "stdio", Command: "a"},
+		{ID: 11, Name: "hang2", Transport: "stdio", Command: "b"},
+		{ID: 12, Name: "ok", Transport: "stdio", Command: "c"},
+	}
+	start := time.Now()
+	res := connectAgentMCPs(context.Background(), nil, servers, ExecPrivilege{}, connect)
+	if d := time.Since(start); d > 1900*time.Millisecond {
+		t.Fatalf("connect took %s; the servers did not connect in parallel", d)
+	}
+	if res[0].err == nil || res[1].err == nil || res[2].err != nil || res[2].client == nil {
+		t.Fatalf("results = %+v", res)
+	}
+	calls.Store(0)
+	start = time.Now()
+	res = connectAgentMCPs(context.Background(), nil, servers, ExecPrivilege{}, connect)
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("second run waited %s on servers that are cooling down", d)
+	}
+	if calls.Load() != 1 || res[0].err == nil || res[2].err != nil {
+		t.Fatalf("calls = %d, results = %+v", calls.Load(), res)
+	}
+	// Editing the server retries it at once.
+	edited := *servers[0]
+	edited.Command = "a2"
+	calls.Store(0)
+	connectAgentMCPs(context.Background(), nil, []*db.MCPServer{&edited}, ExecPrivilege{}, connect)
+	if calls.Load() != 1 {
+		t.Fatalf("edited server was not retried")
+	}
+	// So does changing an HTTP server's request timeout.
+	agentMCPCooldowns.mark(servers[1], time.Now().Add(time.Hour))
+	longer := *servers[1]
+	longer.TimeoutSeconds = 120
+	if _, ok := agentMCPCooldowns.skip(&longer, time.Now()); ok {
+		t.Fatal("a changed request timeout did not clear the cooldown")
+	}
+}
+
+// Stopping the run does not mark a server as cooling down.
+func TestConnectAgentMCPsRunStoppedIsNotAServerFailure(t *testing.T) {
+	t.Setenv(envMCPConnectTimeout, "5")
+	agentMCPCooldowns = &mcpCooldowns{until: map[int64]mcpCooldown{}}
+	ctx, cancel := context.WithCancel(context.Background())
+	connect := func(ctx context.Context, _ *db.MCPServer, _ ExecPrivilege) (mcpClient, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	go func() { time.Sleep(50 * time.Millisecond); cancel() }()
+	m := &db.MCPServer{ID: 20, Name: "slow"}
+	res := connectAgentMCPs(ctx, nil, []*db.MCPServer{m}, ExecPrivilege{}, connect)
+	if !errors.Is(res[0].err, context.Canceled) {
+		t.Fatalf("err = %v", res[0].err)
+	}
+	if _, ok := agentMCPCooldowns.skip(m, time.Now()); ok {
+		t.Fatal("a stopped run put the server on cooldown")
+	}
+}
+
+// An immediate connect error is reported as itself, never as a timeout, and
+// puts the server on no cooldown.
+func TestConnectMCPToolsKeepsImmediateError(t *testing.T) {
+	boom := errors.New("boom")
+	fail := func(context.Context, *db.MCPServer, ExecPrivilege) (mcpClient, error) { return nil, boom }
+	for i := 0; i < 500; i++ {
+		r := connectMCPTools(context.Background(), &db.MCPServer{ID: 3}, ExecPrivilege{}, time.Second, fail)
+		if !errors.Is(r.err, boom) || errors.Is(r.err, errMCPConnectTimeout) {
+			t.Fatalf("run %d: err = %v", i, r.err)
+		}
+	}
+}
+
+// Every client that connects after the caller gave up is closed.
+func TestConnectMCPToolsClosesEveryLateClient(t *testing.T) {
+	const n = 50
+	clients := make([]*fakeMCPClient, n)
+	for i := range clients {
+		clients[i] = &fakeMCPClient{}
+		release := make(chan struct{})
+		cl := clients[i]
+		slow := func(context.Context, *db.MCPServer, ExecPrivilege) (mcpClient, error) {
+			<-release
+			return cl, nil
+		}
+		if r := connectMCPTools(context.Background(), &db.MCPServer{ID: 4}, ExecPrivilege{}, 5*time.Millisecond, slow); r.err == nil {
+			t.Fatal("want a timeout")
+		}
+		close(release)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for _, cl := range clients {
+		for !cl.closed.Load() {
+			if time.Now().After(deadline) {
+				t.Fatal("a late client was not closed")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+}
