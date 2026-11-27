@@ -137,6 +137,13 @@ func TestCheckMCPCommandUsesConfiguredPath(t *testing.T) {
 	if err := checkMCPCommand(name, map[string]string{"PATH": dir}); err != nil {
 		t.Fatalf("command on the configured PATH: %v", err)
 	}
+	shell := "sh"
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+	}
+	if err := checkMCPCommand(shell, map[string]string{"PATH": dir}); err != nil {
+		t.Fatalf("a command on ARTEX's PATH was rejected because the row sets another PATH: %v", err)
+	}
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(filepath.Join(dir, file), 0o644); err != nil {
 			t.Fatal(err)

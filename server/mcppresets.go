@@ -193,8 +193,8 @@ var errMCPCommandMissing = errors.New("command not found")
 // a process start that errors (or hangs) on every agent run. env is the row's
 // configured environment: the server starts the command with it (directly, or
 // through the privilege-drop shim, which resolves the command on the same
-// environment), so a PATH (and on Windows PATHEXT) set there is searched
-// instead of ARTEX's own.
+// environment), so a PATH (and on Windows PATHEXT) set there is searched as
+// well as ARTEX's own.
 func checkMCPCommand(command string, env map[string]string) error {
 	if command == "" {
 		return nil
@@ -234,10 +234,15 @@ func lookupMCPCommand(command string, env map[string]string) bool {
 		_, err := os.Stat(command)
 		return err == nil
 	}
+	// Without the privilege drop the command is resolved on ARTEX's own PATH;
+	// with it, the shim resolves it on the row's PATH when one is set. Accept
+	// either, so the check never rejects a command that would start.
+	if _, err := exec.LookPath(command); err == nil {
+		return true
+	}
 	path, ok := envLookup(env, "PATH")
 	if !ok {
-		_, err := exec.LookPath(command)
-		return err == nil
+		return false
 	}
 	var exts []string
 	if runtime.GOOS == "windows" {
