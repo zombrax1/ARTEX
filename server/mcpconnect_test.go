@@ -103,6 +103,13 @@ func TestConnectAgentMCPsParallelAndCooldown(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("edited server was not retried")
 	}
+	// So does changing an HTTP server's request timeout.
+	agentMCPCooldowns.mark(servers[1], time.Now().Add(time.Hour))
+	longer := *servers[1]
+	longer.TimeoutSeconds = 120
+	if _, ok := agentMCPCooldowns.skip(&longer, time.Now()); ok {
+		t.Fatal("a changed request timeout did not clear the cooldown")
+	}
 }
 
 // Stopping the run does not mark a server as cooling down.

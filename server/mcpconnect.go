@@ -73,7 +73,7 @@ var agentMCPCooldowns = &mcpCooldowns{until: map[int64]mcpCooldown{}}
 
 // mcpFingerprint is what identifies a server's configuration.
 func mcpFingerprint(m *db.MCPServer) string {
-	b, _ := json.Marshal([]any{m.Transport, m.Command, m.Args, m.URL, m.Env, m.Insecure})
+	b, _ := json.Marshal([]any{m.Transport, m.Command, m.Args, m.URL, m.Env, m.Insecure, m.TimeoutSeconds})
 	return string(b)
 }
 
