@@ -80,30 +80,28 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 			mcpIDs, _ := pg.AgentVisible(a.ID, "mcp")
 			want := idSet(mcpIDs)
 			all, _ := pg.ListMCP()
+			var conn []*db.MCPServer
 			for _, m := range all {
 				if !m.Enabled {
 					continue
 				}
-				directVisible := want[m.ID]
-				skillGated := gated[m.Name]
-				if !directVisible && !skillGated {
+				if !want[m.ID] && !gated[m.Name] {
 					continue // neither directly visible nor referenced by a visible skill
 				}
-				cl, err := connectMCP(ctx, m, priv)
-				if err != nil {
-					log.Printf("[mcp] %s connect failed: %v", m.Name, err)
-					_ = pg.UpdateMCPHealth(m.ID, false, "connect: "+err.Error())
+				conn = append(conn, m)
+			}
+			// In parallel, each within a bounded time (mcpconnect.go): a server
+			// that never answers must not hold the run before its first model call.
+			results := connectAgentMCPs(ctx, pg, conn, priv, connectMCP)
+			for i, m := range conn {
+				r := results[i]
+				if r.err != nil {
 					continue
 				}
-				closers = append(closers, cl)
-				ts, err := cl.Tools(ctx)
-				if err != nil {
-					log.Printf("[mcp] %s tools/list failed: %v", m.Name, err)
-					_ = pg.UpdateMCPHealth(m.ID, false, "tools/list: "+err.Error())
-					continue
-				}
-				_ = pg.UpdateMCPHealth(m.ID, true, "")
-				for _, t := range ts {
+				closers = append(closers, r.client)
+				directVisible := want[m.ID]
+				skillGated := gated[m.Name]
+				for _, t := range r.tools {
 					// MCP tools return target-influenced content (browser pages, remote
 					// analyses). Flag it in the description (cached prompt + on-demand
 					// schema) so the model treats their output as data, not instructions.
