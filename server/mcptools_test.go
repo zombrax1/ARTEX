@@ -349,3 +349,30 @@ func TestIsStockBrowserRow(t *testing.T) {
 		}
 	}
 }
+
+func TestNodeLaunchOnWindows(t *testing.T) {
+	in := newMCPInstaller(t.TempDir())
+	var p mcpPreset
+	for _, q := range mcpPresets("windows") {
+		if q.ID == "playwright" {
+			p = q
+		}
+	}
+	if _, _, ok := in.nodeLaunch(p, "windows"); ok {
+		t.Fatal("node launch chosen for a Playwright ARTEX did not install")
+	}
+	entry := filepath.Join(in.dir, "node", "node_modules", "@playwright", "mcp", "cli.js")
+	if err := os.MkdirAll(filepath.Dir(entry), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entry, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd, args, ok := in.nodeLaunch(p, "windows")
+	if !ok || cmd != "node" || len(args) != len(p.Args)+1 || args[0] != entry || args[1] != p.Args[0] {
+		t.Fatalf("nodeLaunch = %q %q %v", cmd, args, ok)
+	}
+	if _, _, ok := in.nodeLaunch(p, "linux"); ok {
+		t.Fatal("node launch chosen outside Windows")
+	}
+}

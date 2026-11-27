@@ -217,10 +217,13 @@ type mcpNpmPackage struct {
 	PresetID string
 	Command  string
 	Spec     string
+	// Entry is the package's bin script under node_modules, which node runs on
+	// Windows in place of the .cmd wrapper npm puts on PATH.
+	Entry string
 }
 
 var mcpNpmPackages = []mcpNpmPackage{
-	{PresetID: "playwright", Command: browserMCPCommandName, Spec: "@playwright/mcp@0.0.86"},
+	{PresetID: "playwright", Command: browserMCPCommandName, Spec: "@playwright/mcp@0.0.86", Entry: "@playwright/mcp/cli.js"},
 }
 
 // mcpInstallState is what the installer did for one preset, shown on its card.
@@ -733,6 +736,10 @@ func (s *Server) autoAddMCPPreset(p mcpPreset) {
 		}
 		if p.ID == "playwright" && isStockBrowserRow(r) {
 			r.Enabled = true
+			if cmd, args, ok := s.toolInstaller.windowsNodeLaunch(p); ok {
+				r.Command = cmd
+				r.Args, _ = json.Marshal(args)
+			}
 			if _, err := pg.SaveMCP(r); err != nil {
 				log.Printf("[mcp] enable %s: %v", r.Name, err)
 				return
@@ -741,6 +748,9 @@ func (s *Server) autoAddMCPPreset(p mcpPreset) {
 		}
 		_ = pg.SetSetting(key, "done")
 		return
+	}
+	if cmd, a, ok := s.toolInstaller.windowsNodeLaunch(p); ok {
+		p.Command, p.Args = cmd, a
 	}
 	args, _ := json.Marshal(p.Args)
 	env, _ := json.Marshal(p.Env)
@@ -769,4 +779,30 @@ func isStockBrowserRow(r *db.MCPServer) bool {
 		return false
 	}
 	return len(jsonStrMap(r.Env)) == 0
+}
+
+// windowsNodeLaunch returns how to start an npm-installed server on Windows
+// without its .cmd wrapper: node with the package's JavaScript entry point.
+// npm puts only a batch wrapper on PATH there, and ARTEX starts stdio servers
+// directly (and through the agent account's launcher), not through cmd.exe.
+// ok is false on other systems and for a copy ARTEX did not install.
+func (in *mcpInstaller) windowsNodeLaunch(p mcpPreset) (string, []string, bool) {
+	return in.nodeLaunch(p, runtime.GOOS)
+}
+
+func (in *mcpInstaller) nodeLaunch(p mcpPreset, goos string) (string, []string, bool) {
+	if goos != "windows" || in == nil {
+		return "", nil, false
+	}
+	for _, n := range mcpNpmPackages {
+		if n.PresetID != p.ID || n.Entry == "" {
+			continue
+		}
+		entry := filepath.Join(in.dir, "node", "node_modules", filepath.FromSlash(n.Entry))
+		if _, err := os.Stat(entry); err != nil {
+			return "", nil, false
+		}
+		return "node", append([]string{entry}, p.Args...), true
+	}
+	return "", nil, false
 }
